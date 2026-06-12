@@ -50,6 +50,8 @@
     isHoliday:       false,
     isHistorical:    false,
     lastPrediction:  null,
+    regionalHourlyTemperatures: [],
+    nationalHourlyTemperatures: [],
   };
 
   let hourlyChart   = null;
@@ -94,6 +96,8 @@
     insightYoy:          $('insight-yoy'),
     chartModeBadge:      $('chart-mode-badge'),
     legendActual:        $('legend-actual'),
+    legendRegionalTemp:  $('legend-regional-temp'),
+    legendNationalTemp:  $('legend-national-temp'),
   };
 
   // ============================================
@@ -246,6 +250,8 @@
           dom.tempInput.value   = data.temperature_celsius;
           state.temperature     = data.temperature_celsius;
           state.tempAutoFetched = true;
+          state.regionalHourlyTemperatures = data.regional_hourly_temperatures || [];
+          state.nationalHourlyTemperatures = data.national_hourly_temperatures || [];
           const src = data.source && data.source.includes('average')
             ? `Monthly avg — ${data.city}`
             : `Auto-fetched — ${data.city}`;
@@ -257,6 +263,8 @@
       .catch((err) => {
         if (err.name === 'AbortError') return;
         state.tempAutoFetched = false;
+        state.regionalHourlyTemperatures = [];
+        state.nationalHourlyTemperatures = [];
         setTempStatus('error', 'Weather API unavailable — please enter temperature manually');
       });
   }
@@ -278,6 +286,8 @@
       if (state.tempAutoFetched) {
         state.tempAutoFetched = false;
         setTempStatus('manual', 'Manually entered');
+        state.regionalHourlyTemperatures = [];
+        state.nationalHourlyTemperatures = [];
       }
     });
   }
@@ -345,6 +355,7 @@
       hour:       state.hour,
       temperature: state.temperature,
       is_holiday: state.isHoliday,
+      national_hourly_temperatures: state.nationalHourlyTemperatures,
     };
 
     try {
@@ -493,6 +504,8 @@
     });
 
     const hasActual = Array.isArray(actual) && actual.length === 24;
+    const hasRegTemp = Array.isArray(state.regionalHourlyTemperatures) && state.regionalHourlyTemperatures.length === 24;
+    const hasNatTemp = Array.isArray(state.nationalHourlyTemperatures) && state.nationalHourlyTemperatures.length === 24;
 
     // Update mode badge and legend
     if (hasActual) {
@@ -505,6 +518,18 @@
       dom.chartModeBadge.style.color      = '#2e7d32';
       dom.chartModeBadge.textContent      = '🔮 Forecast Only';
       dom.legendActual.style.display      = 'none';
+    }
+
+    if (hasRegTemp) {
+      dom.legendRegionalTemp.style.display = 'flex';
+    } else {
+      dom.legendRegionalTemp.style.display = 'none';
+    }
+
+    if (hasNatTemp) {
+      dom.legendNationalTemp.style.display = 'flex';
+    } else {
+      dom.legendNationalTemp.style.display = 'none';
     }
 
     // Highlight selected point on predicted line
@@ -529,6 +554,7 @@
         pointRadius:          pointRadius,
         pointHoverRadius:     6,
         borderDash:           hasActual ? [6, 3] : [],
+        yAxisID:            'y',
       },
     ];
 
@@ -544,6 +570,36 @@
         pointRadius:         0,
         pointHoverRadius:    5,
         borderDash:          [],
+        yAxisID:            'y',
+      });
+    }
+
+    if (hasRegTemp) {
+      datasets.push({
+        label:              'Regional Temp (°C)',
+        data:               state.regionalHourlyTemperatures,
+        fill:               false,
+        borderColor:        '#e91e63',
+        borderWidth:         1.5,
+        tension:             0.4,
+        pointRadius:         0,
+        pointHoverRadius:    4,
+        yAxisID:            'y1',
+      });
+    }
+
+    if (hasNatTemp) {
+      datasets.push({
+        label:              'National Weighted Temp (°C)',
+        data:               state.nationalHourlyTemperatures,
+        fill:               false,
+        borderColor:        '#00d4aa',
+        borderWidth:         1.5,
+        borderDash:          [4, 4],
+        tension:             0.4,
+        pointRadius:         0,
+        pointHoverRadius:    4,
+        yAxisID:            'y1',
       });
     }
 
@@ -564,7 +620,14 @@
             cornerRadius:    8,
             padding:         10,
             callbacks: {
-              label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} GW`,
+              label: (ctx) => {
+                const label = ctx.dataset.label;
+                const val = ctx.parsed.y;
+                if (label.includes('Temp')) {
+                  return `${label}: ${val.toFixed(1)} °C`;
+                }
+                return `${label}: ${val.toFixed(2)} GW`;
+              },
             },
           },
           verticalLine: { hour: selectedHour },
@@ -581,12 +644,35 @@
             },
           },
           y: {
+            position: 'left',
             grid:   { color: '#F0F0F0', lineWidth: 1 },
             border: { display: false },
             ticks:  {
               font:     { family: 'Inter', size: 10 },
               color:    '#718096',
               callback: (v) => `${v.toFixed(1)} GW`,
+            },
+            title: {
+              display: true,
+              text: 'Demand (GW)',
+              font: { family: 'Inter', size: 10, weight: '600' },
+              color: '#718096',
+            },
+          },
+          y1: {
+            position: 'right',
+            grid:   { display: false },
+            border: { display: false },
+            ticks:  {
+              font:     { family: 'Inter', size: 10 },
+              color:    '#718096',
+              callback: (v) => `${v.toFixed(1)} °C`,
+            },
+            title: {
+              display: true,
+              text: 'Temperature (°C)',
+              font: { family: 'Inter', size: 10, weight: '600' },
+              color: '#718096',
             },
           },
         },

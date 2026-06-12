@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # projec
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 MODEL_PATH    = os.path.join(BASE_DIR, "smartgrid_lstm_model.keras")
 LOAD_FILE     = os.path.join(BASE_DIR, "hourlyLoadDataIndia.xlsx")
-TEMP_FILE     = os.path.join(BASE_DIR, "monthly_temp.xlsx")
+TEMP_FILE     = os.path.join(BASE_DIR, "historical_hourly_temp.csv")
 
 # ── Flask app ──────────────────────────────────────────────────────────────────
 # Use static_url_path='/static' so Flask's built-in static handler doesn't
@@ -116,47 +116,15 @@ def _get_temp_for_date(year: int, month: int) -> float:
 def load_data_and_model():
     global MODEL, SCALER, DF, MONTHLY_TEMPS, DATASET_END
 
-    # ── Load & clean temperature data ─────────────────────────────────────────
+    # ── Load hourly temperature data (weighted national hourly temperature) ──
     print("Loading temperature data…")
-    df_temp = pd.read_excel(TEMP_FILE)
-    temp_cols_lower = [c.lower() for c in df_temp.columns]
-    year_col  = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "year"  in c][0]]
-    month_col = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "month" in c][0]]
-    remaining = [c for c in df_temp.columns if c not in [year_col, month_col]]
-    temp_val_col = next((c for c in remaining if "temp" in c.lower()), remaining[-1])
-
-    df_temp_clean = df_temp[[year_col, month_col, temp_val_col]].copy()
-    df_temp_clean.columns = ["year", "month", "temperature_max"]
-
-    if pd.api.types.is_string_dtype(df_temp_clean["month"]) or \
-       isinstance(df_temp_clean["month"].iloc[0], str):
-        df_temp_clean["month"] = (df_temp_clean["month"].astype(str)
-                                  .str[:3].str.lower().map(MONTH_MAP))
-    df_temp_clean["year"]  = df_temp_clean["year"].astype(int)
-    df_temp_clean["month"] = df_temp_clean["month"].astype(int)
-
-    # Build monthly average lookup (used as fallback for 2022-2024+)
-    MONTHLY_TEMPS = _build_monthly_temp_avg(df_temp_clean)
+    df_temp = pd.read_csv(TEMP_FILE)
+    df_temp["datetime"] = pd.to_datetime(df_temp["datetime"])
+    
+    # Extract month for monthly average fallback lookup
+    df_temp["month"] = df_temp["datetime"].dt.month
+    MONTHLY_TEMPS = df_temp.groupby("month")["hourly_temperature"].mean().to_dict()
     print(f"  Monthly avg temps built: {MONTHLY_TEMPS}")
-
-    # ── Extend temperature data through current year cyclically ───────────────
-    # The file only covers 2019-2021. We replicate monthly averages for 2022+.
-    existing_year_months = set(zip(df_temp_clean["year"], df_temp_clean["month"]))
-    extra_rows = []
-    current_year = datetime.now().year
-    for yr in range(2022, current_year + 2):
-        for mo in range(1, 13):
-            if (yr, mo) not in existing_year_months:
-                extra_rows.append({
-                    "year": yr,
-                    "month": mo,
-                    "temperature_max": MONTHLY_TEMPS[mo]
-                })
-    if extra_rows:
-        df_temp_clean = pd.concat([df_temp_clean,
-                                   pd.DataFrame(extra_rows)],
-                                  ignore_index=True)
-    print(f"  Temperature rows (incl. extended): {len(df_temp_clean)}")
 
     # ── Load hourly load data ──────────────────────────────────────────────────
     print("Loading hourly load data…")
@@ -166,13 +134,13 @@ def load_data_and_model():
     DATASET_END = df_raw["datetime"].max()
     print(f"  Dataset: {df_raw['datetime'].min().date()} -> {DATASET_END.date()} ({len(df_raw):,} rows)")
 
-    # ── Merge temperature ──────────────────────────────────────────────────────
-    df_raw["year"]  = df_raw["datetime"].dt.year
-    df_raw["month"] = df_raw["datetime"].dt.month
-    df = df_raw.merge(df_temp_clean, on=["year","month"], how="left")
-    df["temperature_max"] = df["temperature_max"].ffill().bfill()
+    # ── Merge temperature on datetime ─────────────────────────────────────────
+    df = df_raw.merge(df_temp[["datetime", "hourly_temperature"]], on="datetime", how="left")
+    df["temperature_max"] = df["hourly_temperature"].ffill().bfill()
 
     # ── Feature engineering ───────────────────────────────────────────────────
+    df["year"]      = df["datetime"].dt.year
+    df["month"]     = df["datetime"].dt.month
     df["hour"]      = df["datetime"].dt.hour
     df["dayofweek"] = df["datetime"].dt.dayofweek
     df["hour_sin"]  = np.sin(2 * np.pi * df["hour"]      / 24.0)
@@ -231,7 +199,7 @@ def _get_context_sequence(target_dt: datetime) -> np.ndarray:
     return DF.tail(SEQUENCE_LEN)[LSTM_COLS].values.astype("float32")
 
 
-def predict_24_hours(date_str: str, input_temp: float, is_holiday: bool) -> list:
+def predict_24_hours(date_str: str, national_hourly_temps: list, is_holiday: bool) -> list:
     """
     Predict all 24 hours of a day starting from MIDNIGHT (hour 0).
     Returns a list of 24 national GW values: index 0 = midnight, 23 = 11 PM.
@@ -249,7 +217,7 @@ def predict_24_hours(date_str: str, input_temp: float, is_holiday: bool) -> list
     context_scaled = SCALER.transform(context_raw)
 
     predictions_mw = []
-    for dt in future_times:
+    for i, dt in enumerate(future_times):
         pred_scaled = MODEL.predict(context_scaled[np.newaxis, :, :], verbose=0).flatten()[0]
 
         dummy = np.zeros(len(LSTM_COLS))
@@ -265,9 +233,8 @@ def predict_24_hours(date_str: str, input_temp: float, is_holiday: bool) -> list
         month = dt.month
         dow   = dt.weekday()
 
-        # Simulate a realistic diurnal temperature variation (min at 3 AM, max at 3 PM)
-        # using the selected temperature as the baseline average.
-        simulated_temp = input_temp + 4.0 * np.sin(2 * np.pi * (hour - 9) / 24.0)
+        # Ingest the target hour's temperature directly from the passed weighted curve
+        hour_temp = national_hourly_temps[i]
 
         new_row = [
             np.sin(2 * np.pi * hour  / 24.0),
@@ -277,7 +244,7 @@ def predict_24_hours(date_str: str, input_temp: float, is_holiday: bool) -> list
             np.sin(2 * np.pi * dow   /  7.0),
             np.cos(2 * np.pi * dow   /  7.0),
             1 if dow >= 5 else 0,
-            simulated_temp,
+            hour_temp,
             pred_mw,
         ]
         context_scaled = np.vstack([context_scaled[1:],
@@ -322,10 +289,45 @@ def predict():
     region      = data.get("region", "North")
     date_str    = data.get("date") or datetime.now().strftime("%Y-%m-%d")
     hour        = int(data.get("hour", 12))  # used only for highlighting
-    temperature = float(data.get("temperature", 35.0))
     is_holiday  = bool(data.get("is_holiday", False))
+    
+    national_hourly_temps = data.get("national_hourly_temperatures")
 
     try:
+        # Determine if this date is historical
+        target_date = pd.Timestamp(date_str).date()
+        is_historical = (DF is not None and target_date <= DATASET_END.date())
+
+        # If historical, always load actual national weighted temperatures from DF
+        if is_historical:
+            day_mask = DF["datetime"].dt.date == target_date
+            day_df = DF[day_mask].sort_values("datetime")
+            if len(day_df) >= 24:
+                national_hourly_temps = day_df["temperature_max"].values[:24].tolist()
+            else:
+                month = target_date.month
+                avg_temp = MONTHLY_TEMPS.get(month, 30.0)
+                national_hourly_temps = [
+                    round(avg_temp + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+                    for h in range(24)
+                ]
+        # If future and missing, construct fallback
+        elif not national_hourly_temps:
+            base_temp = data.get("temperature")
+            if base_temp is None:
+                month = target_date.month
+                base_temp = MONTHLY_TEMPS.get(month, 30.0)
+            else:
+                base_temp = float(base_temp)
+            national_hourly_temps = [
+                round(base_temp + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+                for h in range(24)
+            ]
+
+        # Make sure national_hourly_temps has exactly 24 elements
+        if len(national_hourly_temps) != 24:
+            return jsonify({"error": f"national_hourly_temperatures must have exactly 24 elements, got {len(national_hourly_temps)}"}), 400
+
         if MODEL is None:
             # Hard fallback when model failed to load
             baseline_gw     = 160.0 * REGION_FRACTIONS.get(region, 0.2)
@@ -333,9 +335,8 @@ def predict():
             comparison      = {r: baseline_gw for r in REGION_FRACTIONS}
             target_hour_pred = hourly_forecast[hour]
         else:
-            # Always predict from midnight so index 0 = 12 AM, 23 = 11 PM
-            # This ensures alignment with actual data in the chart
-            national_gw = predict_24_hours(date_str, temperature, is_holiday)
+            # Pass the 24 hourly temperatures to predict_24_hours
+            national_gw = predict_24_hours(date_str, national_hourly_temps, is_holiday)
 
             # Determine regional fractions
             fracs = _get_regional_fractions_for_date(date_str)
@@ -358,10 +359,6 @@ def predict():
 
         low  = max(0.0, round(target_hour_pred * 0.93, 2))
         high = round(target_hour_pred * 1.07, 2)
-
-        # Flag whether this date is historical
-        is_historical = (DF is not None and
-                         pd.Timestamp(date_str).date() <= DATASET_END.date())
 
         return jsonify({
             "predicted_demand_gw":  round(target_hour_pred, 2),
@@ -439,6 +436,15 @@ def get_history():
         return jsonify({"error": str(e)}), 500
 
 
+# Regional monthly baseline average temperatures (typical values for representative cities)
+REGIONAL_MONTHLY_TEMPS = {
+    "North":     {1: 15.0, 2: 19.0, 3: 25.0, 4: 32.0, 5: 35.0, 6: 34.0, 7: 31.0, 8: 30.0, 9: 29.0, 10: 26.0, 11: 20.0, 12: 15.0},
+    "South":     {1: 22.0, 2: 24.0, 3: 27.0, 4: 29.0, 5: 28.0, 6: 25.0, 7: 24.0, 8: 24.0, 9: 24.0, 10: 24.0, 11: 23.0, 12: 21.0},
+    "East":      {1: 20.0, 2: 23.0, 3: 28.0, 4: 31.0, 5: 32.0, 6: 30.0, 7: 29.0, 8: 29.0, 9: 29.0, 10: 28.0, 11: 24.0, 12: 20.0},
+    "West":      {1: 24.0, 2: 25.0, 3: 27.0, 4: 29.0, 5: 30.0, 6: 29.0, 7: 27.0, 8: 27.0, 9: 27.0, 10: 28.0, 11: 27.0, 12: 25.0},
+    "NorthEast": {1: 18.0, 2: 20.0, 3: 24.0, 4: 27.0, 5: 28.0, 6: 29.0, 7: 29.0, 8: 29.0, 9: 28.0, 10: 26.0, 11: 22.0, 12: 19.0},
+}
+
 # ── /get_temperature ──────────────────────────────────────────────────────────
 @app.route("/get_temperature", methods=["GET"])
 def get_temperature_route():
@@ -451,30 +457,84 @@ def get_temperature_route():
     except ValueError:
         return jsonify({"error": "Hour must be an integer"}), 400
 
-    # Try live weather API first
-    from weather_api import get_temperature
-    result = get_temperature(region, date_str, hour)
+    target_date = pd.Timestamp(date_str).date()
+    is_historical = (DF is not None and target_date <= DATASET_END.date())
 
-    if "error" in result:
-        # Fallback: return monthly average from our dataset
-        if date_str and MONTHLY_TEMPS:
-            try:
-                month = pd.Timestamp(date_str).month
-                avg_temp = MONTHLY_TEMPS.get(month, 30.0)
-                city = REGION_CITIES.get(region, {}).get("city", region)
-                return jsonify({
-                    "temperature_celsius": round(avg_temp, 1),
-                    "city":    city,
-                    "region":  region,
-                    "date":    date_str,
-                    "hour":    hour,
-                    "source":  "Historical monthly average (dataset)",
-                })
-            except Exception:
-                pass
-        return jsonify(result), 400
+    if is_historical:
+        # Load actual national weighted temperatures from DF for this date
+        day_mask = DF["datetime"].dt.date == target_date
+        day_df = DF[day_mask].sort_values("datetime")
+        
+        if len(day_df) >= 24:
+            national_hourly = day_df["temperature_max"].values[:24].tolist()
+        else:
+            # Fallback if historical data is incomplete
+            month = target_date.month
+            avg_temp = MONTHLY_TEMPS.get(month, 30.0)
+            national_hourly = [
+                round(avg_temp + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+                for h in range(24)
+            ]
+            
+        # Get simulated regional temperature using regional monthly baseline
+        month = target_date.month
+        reg_avg = REGIONAL_MONTHLY_TEMPS.get(region, {}).get(month, 28.0)
+        regional_hourly = [
+            round(reg_avg + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+            for h in range(24)
+        ]
+        
+        city = REGION_CITIES.get(region, {}).get("city", region)
+        temperature_celsius = regional_hourly[hour]
+        
+        return jsonify({
+            "temperature_celsius": round(temperature_celsius, 1),
+            "regional_hourly_temperatures": regional_hourly,
+            "national_hourly_temperatures": [round(t, 2) for t in national_hourly],
+            "city": city,
+            "region": region,
+            "date": date_str,
+            "hour": hour,
+            "source": "Historical dataset (weighted/simulated)",
+        })
+        
+    else:
+        # Try live weather API first
+        from weather_api import get_temperature
+        result = get_temperature(region, date_str, hour)
 
-    return jsonify(result)
+        if "error" in result:
+            month = target_date.month
+            
+            # National fallback
+            avg_temp = MONTHLY_TEMPS.get(month, 30.0)
+            national_hourly = [
+                round(avg_temp + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+                for h in range(24)
+            ]
+            
+            # Regional fallback
+            reg_avg = REGIONAL_MONTHLY_TEMPS.get(region, {}).get(month, 28.0)
+            regional_hourly = [
+                round(reg_avg + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
+                for h in range(24)
+            ]
+            
+            city = REGION_CITIES.get(region, {}).get("city", region)
+            temperature_celsius = regional_hourly[hour]
+            
+            return jsonify({
+                "temperature_celsius": round(temperature_celsius, 1),
+                "regional_hourly_temperatures": regional_hourly,
+                "national_hourly_temperatures": national_hourly,
+                "city": city,
+                "region": region,
+                "date": date_str,
+                "hour": hour,
+                "source": "Fallback monthly average (API offline)",
+            })
+
+        return jsonify(result)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ print("Packages ready!")
 import os
 
 LOAD_FILE = "hourlyLoadDataIndia.xlsx"
-TEMP_FILE = "monthly_temp.xlsx"
+TEMP_FILE = "historical_hourly_temp.csv"
 
 # Verify files exist
 for f in [LOAD_FILE, TEMP_FILE]:
@@ -131,7 +131,7 @@ print(f"  Date range : {df_raw['datetime'].min().date()} to {df_raw['datetime'].
 
 # ?? Load temperature file ?????????????????????????????????????????????????????
 print("\nLoading temperature data...")
-df_temp = pd.read_excel(TEMP_FILE)
+df_temp = pd.read_csv(TEMP_FILE)
 print(f"  Temp file  : {df_temp.shape}")
 print("  Temp columns:", df_temp.columns.tolist())
 display(df_temp.head(3))
@@ -148,55 +148,30 @@ display(df_raw.isnull().sum().to_frame("Missing"))
 print("\nBasic Statistics:")
 display(df_raw[[TARGET]].describe().round(2))
 
-# CELL 5 -- Merge temperature data on year-month key
+# CELL 5 -- Merge temperature data on datetime key
 
 print("Temperature file columns:", df_temp.columns.tolist())
 print("Temperature file sample:")
 display(df_temp.head(8))
 
-# Create numeric year/month keys in load data
-df_raw["year"]  = df_raw["datetime"].dt.year
-df_raw["month"] = df_raw["datetime"].dt.month   # integer: 1-12
-
-# ── Detect columns in temp file ───────────────────────────────────────────────
-temp_cols_lower = [c.lower() for c in df_temp.columns]
-
-year_col  = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "year"  in c][0]]             if any("year"  in c for c in temp_cols_lower) else df_temp.columns[0]
-month_col = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "month" in c][0]]             if any("month" in c for c in temp_cols_lower) else df_temp.columns[1]
-
-# Prefer the column with "temp" in its name; fall back to first remaining column
-remaining = [c for c in df_temp.columns if c not in [year_col, month_col]]
-temp_val_col = next((c for c in remaining if "temp" in c.lower()), remaining[-1])
-
-print(f"\nDetected: year_col='{year_col}', month_col='{month_col}', temp_col='{temp_val_col}'")
-
-# ── Build clean temp dataframe ────────────────────────────────────────────────
-df_temp_clean = df_temp[[year_col, month_col, temp_val_col]].copy()
-df_temp_clean.columns = ["year", "month", "temperature_max"]
-
-# FIX: Convert string month names ("Jan","Feb",...) to integers if needed
-MONTH_MAP = {"jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,
-             "jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12}
-if pd.api.types.is_string_dtype(df_temp_clean["month"]) or isinstance(df_temp_clean["month"].iloc[0], str):
-    df_temp_clean["month"] = df_temp_clean["month"].astype(str).str[:3].str.lower().map(MONTH_MAP)
-    print("  Converted month names to integers.")
-
-# Ensure both key columns are the same dtype (int)
-df_temp_clean["year"]  = df_temp_clean["year"].astype(int)
-df_temp_clean["month"] = df_temp_clean["month"].astype(int)
-df_raw["year"]         = df_raw["year"].astype(int)
-df_raw["month"]        = df_raw["month"].astype(int)
-
-print(f"  Temp dtypes after fix: year={df_temp_clean['year'].dtype}, month={df_temp_clean['month'].dtype}")
+# Ensure datetime column is parsed as Timestamp
+df_temp["datetime"] = pd.to_datetime(df_temp["datetime"])
 
 # ── Merge ─────────────────────────────────────────────────────────────────────
-df = df_raw.merge(df_temp_clean, on=["year","month"], how="left")
+df = df_raw.merge(df_temp, on="datetime", how="left")
 
-# Forward-fill temperature for months beyond the temperature file's coverage
-df["temperature_max"] = df["temperature_max"].ffill().bfill()
+# Assign temperature column
+df["temperature_max"] = df["hourly_temperature"].ffill().bfill()
+
+# Assign year and month columns needed for EDA and downstream features
+df["year"]  = df["datetime"].dt.year
+df["month"] = df["datetime"].dt.month
 
 print(f"\nAfter merge: {df.shape}")
 print(f"Temperature NaNs remaining: {df['temperature_max'].isnull().sum()}")
+
+# Keep only the last 24,000 rows of the dataset to speed up CPU training
+df = df.tail(24000).reset_index(drop=True)
 display(df[["datetime", TARGET, "temperature_max"]].head())
 
 # CELL 6 -- EDA: 4 plots for your report screenshots
@@ -238,7 +213,8 @@ save_fig("03_seasonal_pattern.png")
 
 # ?? Plot 4: Temperature vs Load correlation ???????????????????????????????????
 monthly_load = df.groupby(["year","month"])[TARGET].mean().reset_index()
-monthly_load = monthly_load.merge(df_temp_clean, on=["year","month"], how="left").dropna()
+monthly_temp_avg = df.groupby(["year", "month"])["temperature_max"].mean().reset_index()
+monthly_load = monthly_load.merge(monthly_temp_avg, on=["year","month"], how="left").dropna()
 
 fig, ax1 = plt.subplots(figsize=(14, 5))
 ax2 = ax1.twinx()
@@ -525,8 +501,8 @@ print("\nTraining LSTM ...")
 t0 = time.time()
 history = model_lstm.fit(
     X_train_lstm, y_train_lstm,
-    epochs          = 50,
-    batch_size      = 64,
+    epochs          = 6,
+    batch_size      = 256,
     validation_split= 0.1,
     callbacks       = callbacks,
     verbose         = 1,
