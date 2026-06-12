@@ -63,7 +63,13 @@ def load_data_and_model():
     
     df_temp = pd.read_excel("monthly_temp.xlsx")
     # Quick clean of temp data (as done in run_forecaster.py)
-    df_temp_clean = df_temp[["Year", "Month", "Temperature_Max"]].copy()
+    temp_cols_lower = [c.lower() for c in df_temp.columns]
+    year_col  = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "year"  in c][0]] if any("year"  in c for c in temp_cols_lower) else df_temp.columns[0]
+    month_col = df_temp.columns[[i for i,c in enumerate(temp_cols_lower) if "month" in c][0]] if any("month" in c for c in temp_cols_lower) else df_temp.columns[1]
+    remaining = [c for c in df_temp.columns if c not in [year_col, month_col]]
+    temp_val_col = next((c for c in remaining if "temp" in c.lower()), remaining[-1])
+    
+    df_temp_clean = df_temp[[year_col, month_col, temp_val_col]].copy()
     df_temp_clean.columns = ["year", "month", "temperature_max"]
     MONTH_MAP = {"jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,
                  "jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12}
@@ -153,7 +159,7 @@ def predict_24_hours(start_date_str, start_hour, input_temp, is_holiday):
         # Construct the features for this newly predicted timestep
         hour = dt.hour
         month = dt.month
-        dow = dt.dayofweek
+        dow = dt.weekday()
         
         new_row = [
             np.sin(2 * np.pi * hour / 24.0),
