@@ -10,8 +10,8 @@ print("Packages ready!")
 
 import os
 
-LOAD_FILE = "hourlyLoadDataIndia.xlsx"
-TEMP_FILE = "historical_hourly_temp.csv"
+LOAD_FILE = "C:/Users/lohit/.vscode/Code/Personal/Energy/energy-forecasting/hourlyLoadDataIndia.xlsx"
+TEMP_FILE = "C:/Users/lohit/.vscode/Code/Personal/Energy/energy-forecasting/historical_hourly_temp.csv"
 
 # Verify files exist
 for f in [LOAD_FILE, TEMP_FILE]:
