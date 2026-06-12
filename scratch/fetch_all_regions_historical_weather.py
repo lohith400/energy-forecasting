@@ -75,9 +75,7 @@ print("\nWeighted Temperature Summary:")
 print(df[["datetime", "weighted_temp"] + list(REGION_CITIES.keys())].head())
 
 # Save to CSV
-df_out = pd.DataFrame({
-    "datetime": df["datetime"],
-    "hourly_temperature": df["weighted_temp"]
-})
-df_out.to_csv("historical_hourly_temp.csv", index=False)
-print("\nSaved weighted average to historical_hourly_temp.csv")
+df_out = df[["datetime", "weighted_temp"] + list(REGION_CITIES.keys())].copy()
+df_out.rename(columns={"weighted_temp": "hourly_temperature"}, inplace=True)
+df_out.to_csv("historical_hourly_temp_v2.csv", index=False)
+print("\nSaved weighted average and regional temperatures to historical_hourly_temp_v2.csv")

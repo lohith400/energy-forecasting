@@ -135,8 +135,11 @@ def load_data_and_model():
     print(f"  Dataset: {df_raw['datetime'].min().date()} -> {DATASET_END.date()} ({len(df_raw):,} rows)")
 
     # ── Merge temperature on datetime ─────────────────────────────────────────
-    df = df_raw.merge(df_temp[["datetime", "hourly_temperature"]], on="datetime", how="left")
+    df = df_raw.merge(df_temp, on="datetime", how="left")
     df["temperature_max"] = df["hourly_temperature"].ffill().bfill()
+    for col in ["North", "West", "South", "East", "NorthEast"]:
+        if col in df.columns:
+            df[col] = df[col].ffill().bfill()
 
     # ── Feature engineering ───────────────────────────────────────────────────
     df["year"]      = df["datetime"].dt.year
@@ -467,6 +470,10 @@ def get_temperature_route():
         
         if len(day_df) >= 24:
             national_hourly = day_df["temperature_max"].values[:24].tolist()
+            if region in day_df.columns:
+                regional_hourly = day_df[region].values[:24].tolist()
+            else:
+                regional_hourly = national_hourly
         else:
             # Fallback if historical data is incomplete
             month = target_date.month
@@ -475,27 +482,20 @@ def get_temperature_route():
                 round(avg_temp + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
                 for h in range(24)
             ]
+            regional_hourly = national_hourly
             
-        # Get simulated regional temperature using regional monthly baseline
-        month = target_date.month
-        reg_avg = REGIONAL_MONTHLY_TEMPS.get(region, {}).get(month, 28.0)
-        regional_hourly = [
-            round(reg_avg + 4.0 * math.sin(2 * np.pi * (h - 9) / 24.0), 2)
-            for h in range(24)
-        ]
-        
         city = REGION_CITIES.get(region, {}).get("city", region)
         temperature_celsius = regional_hourly[hour]
         
         return jsonify({
             "temperature_celsius": round(temperature_celsius, 1),
-            "regional_hourly_temperatures": regional_hourly,
+            "regional_hourly_temperatures": [round(t, 2) for t in regional_hourly],
             "national_hourly_temperatures": [round(t, 2) for t in national_hourly],
             "city": city,
             "region": region,
             "date": date_str,
             "hour": hour,
-            "source": "Historical dataset (weighted/simulated)",
+            "source": "Historical dataset",
         })
         
     else:
