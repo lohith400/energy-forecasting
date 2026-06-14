@@ -61,7 +61,7 @@ print(f"NumPy      : {np.__version__}")
 print(f"Pandas     : {pd.__version__}")
 print(f"GPU        : {len(tf.config.list_physical_devices('GPU')) > 0}")
 
-OUTPUT_DIR = "outputs"
+OUTPUT_DIR = os.path.join(BACKEND_DIR, "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Dark plot theme
