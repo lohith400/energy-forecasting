@@ -6,7 +6,7 @@ An advanced deep learning (LSTM) and gradient boosting (LightGBM/XGBoost) powere
 
 ## 📋 Project Overview
 
-**GridSense India** predicts hourly electricity demand for the Indian national grid and its regional subdivisions (North, South, East, West, North-East). 
+**GridSense India** (branded as **E-City**) predicts hourly electricity demand for the Indian national grid and its regional subdivisions (North, South, East, West, North-East). 
 
 Since the forecasting model predicts the **National Hourly Demand** (and scales it to regional grids using fractions), the temperature feature fed into the model represents the **weighted national average hourly temperature**. The system features:
 * **Deep Learning & Gradient Boosting:** Trained on historical hourly grid load records merged with true hourly weighted temperatures.
@@ -22,7 +22,7 @@ Since the forecasting model predicts the **National Hourly Demand** (and scales 
 * ✅ **Multi-Region Weather API** — Fetches 24-hour forecasts for New Delhi, Bengaluru, Kolkata, Mumbai, and Guwahati in parallel and calculates the national load-weighted hourly temperature.
 * ✅ **Historical Analysis Mode** — Query dates from Jan 2019 to Apr 2024 to overlay actual grid demand against predictions and compare them directly with actual historical temperature records.
 * ✅ **Dual Y-Axis Charting** — View both the Selected Region's temperature curve (solid pink) and the National Weighted average temperature curve (dashed teal) plotted on a secondary Y-axis overlaying the hourly demand curve.
-* ✅ **Holiday Override** — Adjust forecasts for national public holidays and weekends (applies a pre-set demand reduction factor).
+* ✅ **Holiday Override** — Adjust forecasts for national public holidays and weekends (applies a pre-set demand reduction factor of 8% to 12%).
 * ✅ **Confidence Intervals** — Understand prediction uncertainty with dynamically generated low/high bounds (±7%).
 
 ---
@@ -31,22 +31,29 @@ Since the forecasting model predicts the **National Hourly Demand** (and scales 
 
 ```
 energy-forecasting/
-├── frontend/                      # Web UI (HTML/CSS/JavaScript)
-│   ├── index.html               # Dashboard layout, dual-axis legends & structure
+├── backend/                      # Python ML models & API
+│   ├── outputs/                 # Model summaries, evaluation plots & logs
+│   ├── SmartGrid_Forecaster_LSTM_LightGBM.ipynb  # Model development notebook
+│   ├── historical_hourly_temp.csv # 5-year load-weighted hourly temperature dataset
+│   ├── hourlyLoadDataIndia.xlsx  # POSOCO / Grid India hourly demand dataset (Jan 2019 – Apr 2024)
+│   ├── model_metadata.json      # Scaler parameters & fitted metrics
+│   ├── monthly_temp.xlsx        # Dataset
+│   ├── run_forecaster.py        # ML training pipeline (LSTM/LightGBM/XGBoost)
+│   ├── server.py                # Flask API server & endpoints (/predict, /get_temperature)
+│   ├── smartgrid_lstm_model.keras # Retrained deep learning model
+│   └── weather_api.py           # Parallel Open-Meteo temperature fetcher
+│
+├── frontend/                     # Web UI (HTML/CSS/JavaScript)
 │   ├── app.js                   # Application state, API requests, & Chart.js logic
+│   ├── index.html               # Dashboard layout, dual-axis legends & structure
 │   └── styles.css               # Responsive design system & themes
 │
-├── backend/                      # Python ML models & API
-│   ├── server.py                # Flask API server & endpoints (/predict, /get_temperature)
-│   ├── run_forecaster.py        # ML training pipeline (LSTM/LightGBM/XGBoost)
-│   ├── weather_api.py           # Parallel Open-Meteo temperature fetcher
-│   └── outputs/                 # Zipped model summaries, evaluation plots & logs
+├── scratch/                      # Temporary/development scripts
+│   ├── fetch_all_regions_historical_weather.py
+│   └── fetch_historical_hourly_weather.py
 │
-├── historical_hourly_temp.csv    # 5-year load-weighted hourly temperature dataset
-├── hourlyLoadDataIndia.xlsx      # POSOCO / Grid India hourly demand dataset (Jan 2019 – Apr 2024)
-├── smartgrid_lstm_model.keras    # Retrained deep learning model
-├── requirements_no_directml.txt  # Python packages checklist (CPU execution)
-├── README.md                     # This file
+├── README.md                     # This unified file
+├── requirements.txt              # Unified Python dependency checklist
 └── venv/                         # Python virtual environment
 ```
 
@@ -63,19 +70,30 @@ energy-forecasting/
 # Navigate to the project directory
 cd energy-forecasting
 
+# Create the virtual environment (if not already present)
+python -m venv venv
+
 # Activate the virtual environment
 # Windows (PowerShell)
 .\venv\Scripts\Activate.ps1
 # Windows (CMD)
 .\venv\Scripts\activate.bat
 # macOS/Linux
-source venv/Scripts/activate
+source venv/bin/activate
+
+# Install Dependencies
+pip install -r requirements.txt
 ```
 
 ### 2. Run Flask Backend Server
 ```bash
 # Set console encoding & launch server
+# Windows (PowerShell)
 $env:PYTHONIOENCODING="utf-8"
+python backend/server.py
+
+# Windows (CMD)
+set PYTHONIOENCODING=utf-8
 python backend/server.py
 ```
 The backend initializes the dataset, fits the scaler, loads the LSTM model, and starts listening on `http://127.0.0.1:5000`.
@@ -100,7 +118,7 @@ Fetches 24-hour temperature profiles for the selected region and computes the lo
   * `date`: `YYYY-MM-DD`
   * `hour`: `0-23` (target hour for display value)
 
-* **Response Example:**
+* **Response Example (JSON):**
   ```json
   {
     "temperature_celsius": 29.0,
@@ -117,7 +135,7 @@ Fetches 24-hour temperature profiles for the selected region and computes the lo
 ### `POST /predict`
 Predicts 24-hour electricity demand for the selected region.
 
-* **Request Body Example:**
+* **Request Body (JSON):**
   ```json
   {
     "region": "South",
@@ -128,7 +146,7 @@ Predicts 24-hour electricity demand for the selected region.
   }
   ```
 
-* **Response Example:**
+* **Response Example (JSON):**
   ```json
   {
     "predicted_demand_gw": 31.5,
@@ -147,6 +165,64 @@ Predicts 24-hour electricity demand for the selected region.
   }
   ```
 
+### `GET /regions/summary`
+Returns the current predicted load for all 5 power grid regions.
+* **Response Example (JSON):**
+  ```json
+  {
+    "North": { "current_load": 42.1, "load_status": "Normal Load", "region": "North" },
+    "South": { "current_load": 31.5, "load_status": "Normal Load", "region": "South" },
+    "East": { "current_load": 20.2, "load_status": "Normal Load", "region": "East" },
+    "West": { "current_load": 35.8, "load_status": "High Load", "region": "West" },
+    "NorthEast": { "current_load": 6.1, "load_status": "Normal Load", "region": "NorthEast" }
+  }
+  ```
+
+### `GET /model/metrics`
+Returns model performance metrics from `model_metadata.json`.
+* **Response Example (JSON):**
+  ```json
+  {
+    "mae": 320.5,
+    "rmse": 480.2,
+    "mape": 2.46,
+    "r2_score": 0.9754,
+    "training_period": "2019–2024",
+    "total_predictions": 43824
+  }
+  ```
+
+### `GET /weather`
+An alias that fetches the current temperature (Celsius) for the given region.
+* **Parameters:**
+  * `region`: `North` | `West` | `South` | `East` | `NorthEast`
+
+---
+
+## 🎨 Frontend Details & Customization
+
+The interface is built with **HTML5**, **CSS3**, and **vanilla JavaScript** using **Chart.js** for visualization.
+
+### Configuration
+* **API Base URL**: The backend API URL is configured in `frontend/app.js`:
+  ```javascript
+  const API_BASE = 'http://localhost:5000';
+  ```
+  Update this variable if serving the Flask API on a different address or port.
+* **Timezone**: The dashboard operates on **Indian Standard Time (IST = UTC+5:30)**.
+
+### Customization
+* **Change Theme Colors**: You can customize the dashboard palette by editing the CSS Variables in `frontend/styles.css`:
+  ```css
+  :root {
+    --navy: #1A3C6E;
+    --blue: #2E75B6;
+    --amber: #B7770D;
+    /* ... */
+  }
+  ```
+* **Modify Chart Rendering**: Chart settings, colors, and datasets can be altered inside `frontend/app.js` functions `renderHourlyChart()` and `renderRegionalChart()`.
+
 ---
 
 ## 🤖 Machine Learning Model Details
@@ -154,13 +230,28 @@ Predicts 24-hour electricity demand for the selected region.
 * **Core Predictor:** Multi-layer LSTM neural network (trained on 46,728 rows of hourly grid load data).
 * **Feature Vector:** Incorporates cyclical time encodings (hour, month, day-of-week), weekend indicators, lag features, rolling statistics, and the national load-weighted hourly temperature curve.
 * **Top-down Regional Splitting:** For any date, the LSTM predicts the 24-hour national demand profile. The server then computes the actual regional fractions for that date (if historical) or uses long-run baseline fractions to split the national demand into regional forecasts.
-* **Weights:**
+* **Baseline Region Load Shares:**
   - North: 30.0%
   - West: 26.6%
   - South: 23.2%
   - East: 15.4%
   - NorthEast: 4.8%
 
+### Training Pipeline (`run_forecaster.py`)
+To train or retrain models:
+```bash
+python backend/run_forecaster.py
+```
+This loads data from Excel files, splits into training/testing sets chronologically, trains LSTM models, generates evaluations, and saves output plots and models to `backend/outputs/`.
+
 ---
 
-**Enjoy forecasting India's electricity demand with GridSense! ⚡**
+## 🔧 Troubleshooting
+
+1. **Dashboard displays but charts won't load**:
+   * Open the browser console (F12) to check for JavaScript errors.
+   * Verify the Flask backend is running on `http://localhost:5000`.
+2. **CORS issues**:
+   * Flask CORS is configured out of the box in `server.py` to allow cross-origin requests. Ensure it isn't blocked by network policies.
+3. **Temperature auto-fetch not working**:
+   * Weather API might be rate-limited. The system will fall back to seasonal monthly averages automatically, or you can enter values manually.

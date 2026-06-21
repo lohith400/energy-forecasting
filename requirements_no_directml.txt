@@ -1,4 +1,0 @@
-flask
-flask-cors
-requests
-# tensorflow-directml removed; install separately on supported Python if needed
