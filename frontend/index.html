@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GridSense India — Electricity Demand Forecasting</title>
-  <meta name="description" content="India electricity demand forecasting dashboard powered by LSTM machine learning. Predict grid load across North, South, East, West, and North-East regions with real-time weather integration.">
+  <title>E-City — India Smart Grid Intelligence Platform</title>
+  <meta name="description" content="E-City: Powering India's Grid Intelligence. LSTM-powered electricity demand forecasting across North, South, East, West, and North-East regions with real-time weather integration.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
 <body>
 
   <!-- ========================================
-       SECTION 1 — Hero Header
+       HEADER
        ======================================== -->
   <header class="header" id="app-header">
     <div class="header-left">
@@ -23,9 +23,9 @@
           <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
         </svg>
       </div>
-      <div>
-        <div class="header-title">GridSense India</div>
-        <div class="header-subtitle">LSTM-Powered Electricity Demand Forecasting &amp; Historical Analysis</div>
+      <div class="header-brand">
+        <div class="header-title">E-City</div>
+        <div class="header-subtitle">Powering India's Grid Intelligence</div>
       </div>
     </div>
     <div class="header-right">
@@ -38,47 +38,63 @@
   </header>
 
   <!-- ========================================
-       SECTION 2 — Input Panel
+       MAIN CONTENT
        ======================================== -->
-  <section class="input-section">
-    <div class="input-card">
-      <h1 class="input-card-title">Forecast Demand</h1>
-      <p class="input-card-subtitle">Select parameters to predict electricity load on the Indian power grid. Pick any date from Jan 2019 onwards for historical Actual vs Predicted analysis.</p>
+  <main class="main-layout">
 
-      <!-- Region Selector -->
-      <div class="region-selector">
-        <div class="region-selector-label">Select Grid Region</div>
-        <div class="region-row">
-          <div class="region-pills" id="region-pills">
-            <button class="region-pill" data-region="North" id="pill-north">
-              <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              North
-            </button>
-            <button class="region-pill" data-region="South" id="pill-south">
-              <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              South
-            </button>
-            <button class="region-pill" data-region="East" id="pill-east">
-              <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              East
-            </button>
-            <button class="region-pill" data-region="West" id="pill-west">
-              <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              West
-            </button>
-            <button class="region-pill" data-region="NorthEast" id="pill-northeast">
-              <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              North-East
-            </button>
+    <!-- LEFT PANEL — Input Controls -->
+    <aside class="left-panel">
+      <div class="input-card">
+        <h1 class="input-card-title">Forecast Demand</h1>
+        <p class="input-card-subtitle">Select a region on the map and configure parameters to generate an LSTM-powered electricity demand forecast.</p>
+
+        <!-- ── SVG India Map ── -->
+        <div class="map-section">
+          <div class="map-label">Select Grid Region</div>
+          <div class="map-container">
+            <svg id="india-map" viewBox="0 0 500 560" xmlns="http://www.w3.org/2000/svg" class="india-svg">
+              <!-- North Region -->
+              <g class="map-region" id="map-north" data-region="North">
+                <path d="M 170 60 L 220 45 L 280 50 L 310 70 L 290 95 L 270 110 L 240 120 L 210 115 L 185 105 L 165 85 Z" class="region-path"/>
+                <text x="230" y="82" class="region-map-label">North</text>
+              </g>
+              <!-- NorthEast Region -->
+              <g class="map-region" id="map-northeast" data-region="NorthEast">
+                <path d="M 310 70 L 360 60 L 400 65 L 410 85 L 390 105 L 365 115 L 330 110 L 295 100 L 290 95 Z" class="region-path"/>
+                <text x="350" y="88" class="region-map-label">NE</text>
+              </g>
+              <!-- East Region -->
+              <g class="map-region" id="map-east" data-region="East">
+                <path d="M 270 110 L 300 105 L 330 110 L 350 135 L 340 165 L 320 185 L 295 195 L 275 175 L 265 150 L 260 130 Z" class="region-path"/>
+                <text x="302" y="150" class="region-map-label">East</text>
+              </g>
+              <!-- West Region -->
+              <g class="map-region" id="map-west" data-region="West">
+                <path d="M 140 120 L 185 105 L 210 115 L 240 120 L 255 145 L 255 175 L 245 205 L 220 225 L 195 230 L 170 215 L 150 190 L 135 165 L 135 145 Z" class="region-path"/>
+                <text x="190" y="170" class="region-map-label">West</text>
+              </g>
+              <!-- South Region -->
+              <g class="map-region" id="map-south" data-region="South">
+                <path d="M 195 230 L 220 225 L 245 205 L 260 220 L 275 250 L 285 285 L 280 320 L 265 350 L 245 370 L 225 380 L 205 370 L 190 345 L 175 310 L 170 275 L 175 245 Z" class="region-path"/>
+                <text x="225" y="300" class="region-map-label">South</text>
+              </g>
+              <!-- Decorative coastal dots -->
+              <circle cx="230" cy="390" r="3" fill="#94a3b8" opacity="0.4"/>
+              <circle cx="220" cy="400" r="2" fill="#94a3b8" opacity="0.3"/>
+              <!-- Legend below map -->
+              <text x="100" y="450" class="map-instruction">Click a region to select it</text>
+            </svg>
+            <!-- Region tooltip -->
+            <div class="map-tooltip" id="map-tooltip"></div>
           </div>
-
-
+          <!-- Selected region pill display -->
+          <div class="selected-region-display" id="selected-region-display">
+            <span class="selected-region-dot" id="selected-region-dot"></span>
+            <span id="selected-region-text">No region selected</span>
+          </div>
         </div>
-      </div>
 
-      <!-- Input Grid -->
-      <div class="input-grid">
-        <!-- Date Picker (left column) -->
+        <!-- ── Date Picker ── -->
         <div class="input-group" id="date-group">
           <label class="input-label" for="forecast-date">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/></svg>
@@ -98,7 +114,7 @@
           </div>
         </div>
 
-        <!-- Hour Slider (right column) -->
+        <!-- ── Hour Slider ── -->
         <div class="input-group" id="hour-group">
           <label class="input-label" for="hour-slider">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
@@ -120,7 +136,7 @@
           </div>
         </div>
 
-        <!-- Temperature Input (left column) -->
+        <!-- ── Temperature Input ── -->
         <div class="input-group" id="temp-group">
           <label class="input-label" for="temp-input">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z"/></svg>
@@ -136,7 +152,7 @@
           </div>
         </div>
 
-        <!-- Holiday Toggle (right column) -->
+        <!-- ── Holiday Toggle ── -->
         <div class="input-group" id="holiday-group">
           <label class="input-label">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM17 10H7v2h10v-2z"/></svg>
@@ -150,7 +166,7 @@
               </label>
               <div>
                 <div class="toggle-text">Holiday Override</div>
-                <div class="toggle-sub">Toggle ON if this is a national public holiday (Republic Day, Independence Day, Diwali, etc.)</div>
+                <div class="toggle-sub">Toggle ON if this is a national public holiday</div>
               </div>
             </div>
             <div class="holiday-warning" id="holiday-warning">
@@ -159,113 +175,138 @@
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Forecast Button -->
-      <div class="forecast-btn-wrapper">
-        <button class="forecast-btn" id="forecast-btn">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg>
-          Forecast Demand
-        </button>
-        <div class="progress-wrapper" id="progress-wrapper">
-          <div class="progress-bar" id="progress-bar"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ========================================
-       SECTION 3 — Results Panel
-       ======================================== -->
-  <section class="results-section" id="results-section">
-    <!-- Result Card 1 — Primary Prediction -->
-    <div class="result-card" id="prediction-card">
-      <div class="prediction-card">
-        <div class="prediction-main">
-          <div class="prediction-label">Predicted Electricity Demand</div>
-          <div>
-            <span class="prediction-value" id="prediction-value">—</span>
-            <span class="prediction-unit">GW</span>
-          </div>
-          <div class="prediction-context" id="prediction-context">—</div>
-          <div class="prediction-range" id="prediction-range">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17h18v2H3v-2zm0-7h18v2H3v-2zm0-7h18v2H3V3z"/></svg>
-            <span id="prediction-range-text">—</span>
+        <!-- ── Forecast Button ── -->
+        <div class="forecast-btn-wrapper">
+          <button class="forecast-btn" id="forecast-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg>
+            Run E-City Forecast
+          </button>
+          <div class="progress-wrapper" id="progress-wrapper">
+            <div class="progress-bar" id="progress-bar"></div>
           </div>
         </div>
-        <div class="status-badge normal" id="status-badge">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-          <span id="status-badge-text">Normal Load</span>
-        </div>
       </div>
-    </div>
+    </aside>
 
-    <!-- Result Card 2 — 24-Hour Demand Curve -->
-    <div class="result-card">
-      <div class="chart-title">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
-        24-Hour Demand Curve
-        <span id="chart-mode-badge" style="margin-left:auto;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;background:#e8f5e9;color:#2e7d32;">Forecast</span>
-      </div>
-      <div id="chart-legend" style="display:flex;gap:18px;align-items:center;padding:4px 0 8px;font-size:12px;color:#555;">
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:24px;height:3px;background:#1A3C6E;display:inline-block;border-radius:2px;"></span>Predicted</span>
-        <span id="legend-actual" style="display:none;align-items:center;gap:5px;"><span style="width:24px;height:3px;background:#e65100;display:inline-block;border-radius:2px;"></span>Actual</span>
-        <span id="legend-regional-temp" style="display:none;align-items:center;gap:5px;"><span style="width:24px;height:3px;background:#e91e63;display:inline-block;border-radius:2px;"></span>Regional Temp</span>
-        <span id="legend-national-temp" style="display:none;align-items:center;gap:5px;"><span style="width:24px;height:3px;background:#00d4aa;display:inline-block;border-radius:2px;border-top:1px dashed #00d4aa;"></span>National Temp</span>
-      </div>
-      <div class="chart-container">
-        <canvas id="hourly-chart"></canvas>
-      </div>
-    </div>
+    <!-- RIGHT PANEL — Results -->
+    <section class="right-panel" id="results-section">
 
-    <!-- Result Card 3 — Regional Comparison -->
-    <div class="result-card">
-      <div class="chart-title">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
-        Regional Demand Comparison
+      <!-- Prediction Hero Card -->
+      <div class="result-card" id="prediction-card">
+        <div class="prediction-card">
+          <div class="prediction-main">
+            <div class="prediction-label">Predicted Electricity Demand</div>
+            <div>
+              <span class="prediction-value" id="prediction-value">—</span>
+              <span class="prediction-unit">GW</span>
+            </div>
+            <div class="prediction-context" id="prediction-context">—</div>
+            <div class="prediction-range" id="prediction-range">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17h18v2H3v-2zm0-7h18v2H3v-2zm0-7h18v2H3V3z"/></svg>
+              <span id="prediction-range-text">—</span>
+            </div>
+          </div>
+          <div class="status-badge normal" id="status-badge">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+            <span id="status-badge-text">Normal Load</span>
+          </div>
+        </div>
       </div>
-      <div class="chart-container-bar">
-        <canvas id="regional-chart"></canvas>
-      </div>
-    </div>
 
-    <!-- Result Card 4 — Insight Strip -->
-    <div class="insight-strip" id="insight-strip">
-      <div class="insight-chip">
-        <div class="insight-icon clock-icon">
-          <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+      <!-- 24-Hour Demand Curve -->
+      <div class="result-card">
+        <div class="chart-title">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
+          24-Hour Demand Curve
+          <span id="chart-mode-badge" class="chart-mode-badge">Forecast</span>
         </div>
-        <div class="insight-text">
-          <span class="insight-value" id="insight-peak">—</span>
-          <span class="insight-label">Peak Hour Today</span>
+        <div id="chart-legend" class="chart-legend">
+          <span class="legend-item"><span class="legend-line" style="background:#2563EB;"></span>Predicted</span>
+          <span id="legend-actual" class="legend-item" style="display:none;"><span class="legend-line" style="background:#e65100;"></span>Actual</span>
         </div>
-      </div>
-      <div class="insight-chip">
-        <div class="insight-icon temp-icon">
-          <svg viewBox="0 0 24 24"><path d="M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z"/></svg>
-        </div>
-        <div class="insight-text">
-          <span class="insight-value" id="insight-temp">—</span>
-          <span class="insight-label">Temp Impact</span>
+        <div class="chart-container">
+          <canvas id="hourly-chart"></canvas>
         </div>
       </div>
-      <div class="insight-chip">
-        <div class="insight-icon trend-icon">
-          <svg viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
-        </div>
-        <div class="insight-text">
-          <span class="insight-value" id="insight-yoy">—</span>
-          <span class="insight-label">vs Last Year Same Day</span>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ========================================
-       Footer
-       ======================================== -->
+      <!-- Regional Demand Comparison Bar Chart -->
+      <div class="result-card">
+        <div class="chart-title">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          Regional Demand Comparison
+        </div>
+        <div class="chart-container-bar">
+          <canvas id="regional-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- ── E-City Automated Insights Terminal ── -->
+      <div class="result-card insight-terminal-card">
+        <div class="chart-title">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4c-1.103 0-2 .897-2 2v14c0 1.103.897 2 2 2h16c1.103 0 2-.897 2-2V5c0-1.103-.897-2-2-2zm0 16H4V5h16v14zM6 7h12v2H6V7zm0 4h12v2H6v-2zm0 4h6v2H6v-2z"/></svg>
+          💡 E-City Automated Insights
+          <span class="terminal-badge">AI Engine</span>
+        </div>
+        <div class="terminal-container" id="terminal-container">
+          <div class="terminal-header">
+            <span class="terminal-dot red"></span>
+            <span class="terminal-dot yellow"></span>
+            <span class="terminal-dot green"></span>
+            <span class="terminal-title">ecity-insight-engine v2.0</span>
+          </div>
+          <div class="terminal-body" id="terminal-body">
+            <div class="terminal-line">
+              <span class="terminal-prompt">ecity@grid:~$</span>
+              <span class="terminal-cmd"> awaiting forecast input...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Insight Strip -->
+      <div class="insight-strip" id="insight-strip">
+        <div class="insight-chip">
+          <div class="insight-icon clock-icon">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+          </div>
+          <div class="insight-text">
+            <span class="insight-value" id="insight-peak">—</span>
+            <span class="insight-label">Peak Hour Today</span>
+          </div>
+        </div>
+        <div class="insight-chip">
+          <div class="insight-icon temp-icon">
+            <svg viewBox="0 0 24 24"><path d="M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z"/></svg>
+          </div>
+          <div class="insight-text">
+            <span class="insight-value" id="insight-temp">—</span>
+            <span class="insight-label">Temp Impact</span>
+          </div>
+        </div>
+        <div class="insight-chip">
+          <div class="insight-icon trend-icon">
+            <svg viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
+          </div>
+          <div class="insight-text">
+            <span class="insight-value" id="insight-yoy">—</span>
+            <span class="insight-label">vs Last Year Same Day</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Footer -->
   <footer class="footer">
-    Built for India Grid Forecasting <span>|</span> LSTM Model <span>|</span> Data: Grid India (POSOCO) <span>|</span> Academic Project
+    <span>E-City — Powering India's Grid Intelligence</span>
+    <span class="footer-sep">|</span>
+    <span>LSTM Neural Network Model</span>
+    <span class="footer-sep">|</span>
+    <span>Data: Grid India (POSOCO)</span>
+    <span class="footer-sep">|</span>
+    <span>Academic Research Project</span>
   </footer>
 
   <!-- Chart.js CDN -->

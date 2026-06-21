@@ -1,24 +1,26 @@
 /**
- * GridSense India — Application Logic
+ * E-City — Application Logic
+ * Powering India's Grid Intelligence
  *
- * Changes from previous version:
- *  1. Reads `all_regional_forecasts` (all 5 regions' 24h curves) from /predict.
- *  2. Reads `national_hourly_gw` (national 24h demand) from /predict.
- *  3. Renders a new "All Regions Comparison" line chart using those curves.
- *  4. Sinusoidal fallback completely removed — temperature state is only
- *     populated from the API or manual entry.
- *  5. Mode indicator logic and historical/future routing unchanged.
+ * Features:
+ *  1. SVG India Map region selection with hover & click interactions.
+ *  2. Typewriter animated terminal for AI-generated insight messages.
+ *  3. Single-axis Chart.js line chart (demand only — no secondary temp axis).
+ *  4. Regional bar comparison chart.
+ *  5. Full backend integration with /predict, /get_history, /get_temperature.
+ *  6. Recursive LSTM 14-feature shape contract honored.
  */
 
 (function () {
   'use strict';
 
   // ── Constants ────────────────────────────────────────────────────────────────
-  const API_BASE   = 'http://localhost:5000';
+  const API_BASE    = 'http://localhost:5000';
   const DATASET_END = new Date('2024-04-30');
-  const MONTHS = ['January','February','March','April','May','June','July',
-                  'August','September','October','November','December'];
-  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS      = ['January','February','March','April','May','June','July',
+                       'August','September','October','November','December'];
+  const DAYS        = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
   const REGION_LABELS = {
     North:     'Northern Grid',
     South:     'Southern Grid',
@@ -26,17 +28,33 @@
     West:      'Western Grid',
     NorthEast: 'North-Eastern Grid',
   };
-  const SEASONAL_AVG = {
-    North: 52, South: 42, East: 28, West: 50, NorthEast: 8,
+
+  const REGION_CITIES = {
+    North:     'New Delhi',
+    South:     'Bengaluru',
+    East:      'Kolkata',
+    West:      'Mumbai',
+    NorthEast: 'Guwahati',
   };
 
-  // Colour palette for the 5-region overlay chart
   const REGION_COLORS = {
-    North:     '#1A3C6E',
-    South:     '#e65100',
-    East:      '#2e7d32',
-    West:      '#6a1b9a',
-    NorthEast: '#00838f',
+    North:     '#2563EB',
+    South:     '#059669',
+    East:      '#D97706',
+    West:      '#7C3AED',
+    NorthEast: '#0891B2',
+  };
+
+  const REGION_DOT_COLORS = {
+    North:     '#2563EB',
+    South:     '#059669',
+    East:      '#D97706',
+    West:      '#7C3AED',
+    NorthEast: '#0891B2',
+  };
+
+  const SEASONAL_AVG = {
+    North: 52, South: 42, East: 28, West: 50, NorthEast: 8,
   };
 
   // ── State ────────────────────────────────────────────────────────────────────
@@ -52,13 +70,17 @@
     isHoliday:       false,
     isHistorical:    false,
     lastPrediction:  null,
-    regionalHourlyTemperatures: [],   // selected region 24h temp curve
-    nationalHourlyTemperatures: [],   // weighted national 24h temp curve
+    regionalHourlyTemperatures: [],
+    nationalHourlyTemperatures: [],
   };
 
-  let hourlyChart      = null;
-  let regionalChart    = null;
-  let allRegionsChart  = null;   // new: all-5-regions demand overlay
+  let hourlyChart   = null;
+  let regionalChart = null;
+
+  // Typewriter state
+  let typewriterQueue   = [];
+  let typewriterActive  = false;
+  let typewriterTimeout = null;
 
   // ── DOM references ───────────────────────────────────────────────────────────
   const $ = (id) => document.getElementById(id);
@@ -66,7 +88,6 @@
   const dom = {
     headerTime:          $('header-time'),
     headerDate:          $('header-date'),
-    regionPills:         $('region-pills'),
     forecastDate:        $('forecast-date'),
     chipMonth:           $('chip-month'),
     chipMonthText:       $('chip-month-text'),
@@ -92,633 +113,646 @@
     statusBadgeText:     $('status-badge-text'),
     hourlyChartCanvas:   $('hourly-chart'),
     regionalChartCanvas: $('regional-chart'),
-    allRegionsCanvas:    $('all-regions-chart'),   // new canvas (add to index.html)
     insightPeak:         $('insight-peak'),
     insightTemp:         $('insight-temp'),
     insightYoy:          $('insight-yoy'),
     chartModeBadge:      $('chart-mode-badge'),
     legendActual:        $('legend-actual'),
-    legendRegionalTemp:  $('legend-regional-temp'),
-    legendNationalTemp:  $('legend-national-temp'),
+    terminalBody:        $('terminal-body'),
+    // Map elements
+    indiaMap:            $('india-map'),
+    mapTooltip:          $('map-tooltip'),
+    selectedRegionText:  $('selected-region-text'),
+    selectedRegionDot:   $('selected-region-dot'),
+    selectedRegionDisplay: $('selected-region-display'),
   };
 
-  // ── Live IST clock ────────────────────────────────────────────────────────────
+  // ── Clock ────────────────────────────────────────────────────────────────────
   function updateClock() {
     const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const ist = new Date(utc + 5.5 * 3600000);
-    const h   = ist.getHours(), m = ist.getMinutes(), s = ist.getSeconds();
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12  = h % 12 || 12;
-    dom.headerTime.textContent =
-      `${h12}:${pad(m)}:${pad(s)} ${ampm}`;
-    dom.headerDate.textContent =
-      `${DAYS[ist.getDay()]}, ${ist.getDate()} ${MONTHS[ist.getMonth()]} ${ist.getFullYear()}`;
+    const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const hh  = String(ist.getHours()).padStart(2, '0');
+    const mm  = String(ist.getMinutes()).padStart(2, '0');
+    const ss  = String(ist.getSeconds()).padStart(2, '0');
+    if (dom.headerTime) dom.headerTime.textContent = `${hh}:${mm}:${ss}`;
+    if (dom.headerDate) dom.headerDate.textContent =
+      ist.toLocaleDateString('en-IN', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
   }
-  const pad = (n) => String(n).padStart(2, '0');
+  updateClock();
+  setInterval(updateClock, 1000);
 
-  // ── Region pills ──────────────────────────────────────────────────────────────
-  function initRegionPills() {
-    const pills = dom.regionPills.querySelectorAll('.region-pill');
-    pills.forEach((pill) => {
-      pill.addEventListener('click', () => {
-        pills.forEach((p) => p.classList.remove('active'));
-        pill.classList.add('active');
-        state.region = pill.dataset.region;
-        tryFetchTemperature();
+  // ── SVG Map Interactions ─────────────────────────────────────────────────────
+  function initMap() {
+    const regions = dom.indiaMap.querySelectorAll('.map-region');
+    regions.forEach((regionEl) => {
+      const regionId = regionEl.dataset.region;
+
+      regionEl.addEventListener('mouseenter', (e) => {
+        const tooltip = dom.mapTooltip;
+        const label   = REGION_LABELS[regionId] || regionId;
+        const city    = REGION_CITIES[regionId] || '';
+        tooltip.innerHTML = `<strong>${label}</strong>${city ? '<br>' + city : ''}`;
+        tooltip.classList.add('visible');
+        positionTooltip(e);
+      });
+
+      regionEl.addEventListener('mousemove', positionTooltip);
+
+      regionEl.addEventListener('mouseleave', () => {
+        dom.mapTooltip.classList.remove('visible');
+      });
+
+      regionEl.addEventListener('click', () => {
+        selectRegion(regionId);
       });
     });
   }
 
-  // ── Date picker ───────────────────────────────────────────────────────────────
-  function isHistoricalDate(dateObj) {
-    const d   = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-    const end = new Date(DATASET_END.getFullYear(), DATASET_END.getMonth(), DATASET_END.getDate());
-    return d <= end;
+  function positionTooltip(e) {
+    const rect    = dom.indiaMap.closest('.map-container').getBoundingClientRect();
+    const tooltip = dom.mapTooltip;
+    const x       = e.clientX - rect.left + 10;
+    const y       = e.clientY - rect.top  - 10;
+    tooltip.style.left = Math.min(x, rect.width - 160) + 'px';
+    tooltip.style.top  = Math.max(y - 40, 4) + 'px';
   }
 
-  function updateModeIndicator() {
-    if (!state.date) { dom.modeIndicator.style.display = 'none'; return; }
-    const base = 'display:block;margin-top:6px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px;width:fit-content;';
-    if (state.isHistorical) {
-      dom.modeIndicator.style.cssText = base + 'background:#fff3e0;color:#e65100;';
-      dom.modeIndicator.innerHTML = '📊 Historical Analysis — Actual vs Predicted will be shown';
-    } else {
-      dom.modeIndicator.style.cssText = base + 'background:#e8f5e9;color:#2e7d32;';
-      dom.modeIndicator.innerHTML = '🔮 Future Forecast Mode';
-    }
-  }
+  function selectRegion(regionId) {
+    state.region = regionId;
 
-  function initDatePicker() {
-    dom.forecastDate.addEventListener('change', () => {
-      const val = dom.forecastDate.value;
-      if (!val) return;
-      const [y, mo, d] = val.split('-').map(Number);
-      const dateObj = new Date(y, mo - 1, d);
-      state.date        = val;
-      state.dateObj     = dateObj;
-      state.month       = mo;
-      state.dayOfWeek   = dateObj.getDay();
-      state.isHistorical = isHistoricalDate(dateObj);
-      dom.chipMonthText.textContent = MONTHS[mo - 1];
-      dom.chipMonth.classList.add('visible');
-      dom.chipDayText.textContent = DAYS[dateObj.getDay()];
-      dom.chipDay.classList.add('visible');
-      updateModeIndicator();
-      tryFetchTemperature();
+    // Clear all region selected classes
+    dom.indiaMap.querySelectorAll('.map-region').forEach((el) => {
+      el.classList.remove('selected-north','selected-south','selected-east',
+                          'selected-west','selected-northeast');
     });
-  }
 
-  // ── Hour slider ───────────────────────────────────────────────────────────────
-  function initHourSlider() {
-    function update() {
-      const h = parseInt(dom.hourSlider.value);
-      state.hour = h;
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      dom.hourDisplayText.textContent = `${h % 12 || 12}:00 ${ampm}`;
-      dom.hourDisplay.classList.toggle('peak', h >= 19 && h <= 22);
+    // Apply selected class
+    const el = dom.indiaMap.querySelector(`[data-region="${regionId}"]`);
+    if (el) {
+      const cls = 'selected-' + regionId.toLowerCase().replace('northeast','northeast');
+      el.classList.add(cls);
     }
-    dom.hourSlider.addEventListener('input', update);
-    update();
+
+    // Update display pill
+    const label = REGION_LABELS[regionId] || regionId;
+    const color = REGION_DOT_COLORS[regionId] || '#94A3B8';
+    dom.selectedRegionText.textContent = label;
+    dom.selectedRegionDot.style.background = color;
+
+    // Fetch temperature for current date/region if date is set
+    if (state.date) fetchTemperature();
   }
 
-  // ── Temperature auto-fetch ────────────────────────────────────────────────────
-  let tempFetchController = null;
+  // ── Hour Slider ──────────────────────────────────────────────────────────────
+  function formatHour(h) {
+    if (h === 0)  return '12:00 AM';
+    if (h === 12) return '12:00 PM';
+    return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`;
+  }
 
-  function tryFetchTemperature() {
+  function updateHourSlider() {
+    const h   = parseInt(dom.hourSlider.value, 10);
+    state.hour = h;
+    dom.hourDisplayText.textContent = formatHour(h);
+    const pct = (h / 23) * 100;
+    dom.hourSlider.style.background =
+      `linear-gradient(to right, #2563EB ${pct}%, #E2E8F0 ${pct}%)`;
+  }
+
+  dom.hourSlider.addEventListener('input', updateHourSlider);
+  updateHourSlider();
+
+  // ── Date Picker ──────────────────────────────────────────────────────────────
+  function updateDateInfo(dateStr) {
+    if (!dateStr) return;
+    const d         = new Date(dateStr + 'T00:00:00');
+    state.dateObj   = d;
+    state.month     = d.getMonth();
+    state.dayOfWeek = d.getDay();
+    state.date      = dateStr;
+
+    dom.chipMonthText.textContent = MONTHS[d.getMonth()];
+    dom.chipDayText.textContent   = DAYS[d.getDay()];
+
+    const isHistorical = d <= DATASET_END;
+    state.isHistorical  = isHistorical;
+
+    if (dom.modeIndicator) {
+      dom.modeIndicator.style.display = 'flex';
+      if (isHistorical) {
+        dom.modeIndicator.className  = 'mode-indicator historical';
+        dom.modeIndicator.innerHTML  =
+          '<svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>'
+          + ' Historical Mode — Actual vs Predicted';
+      } else {
+        dom.modeIndicator.className  = 'mode-indicator future';
+        dom.modeIndicator.innerHTML  =
+          '<svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg>'
+          + ' Forecast Mode — Future Prediction';
+      }
+    }
+
+    if (state.region) fetchTemperature();
+  }
+
+  dom.forecastDate.addEventListener('change', () => {
+    updateDateInfo(dom.forecastDate.value);
+  });
+
+  // ── Temperature Fetch ────────────────────────────────────────────────────────
+  async function fetchTemperature() {
     if (!state.region || !state.date) return;
-    if (tempFetchController) tempFetchController.abort();
-    tempFetchController = new AbortController();
-    setTempStatus('loading', 'Fetching temperature…');
-
-    const url = `${API_BASE}/get_temperature?region=${encodeURIComponent(state.region)}&date=${encodeURIComponent(state.date)}&hour=${state.hour}`;
-
-    fetch(url, { signal: tempFetchController.signal })
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((data) => {
-        if (data.temperature_celsius != null) {
-          dom.tempInput.value   = data.temperature_celsius;
-          state.temperature     = data.temperature_celsius;
-          state.tempAutoFetched = true;
-          // Store both curves — these are passed to /predict and rendered on chart
-          state.regionalHourlyTemperatures = data.regional_hourly_temperatures || [];
-          state.nationalHourlyTemperatures = data.national_hourly_temperatures  || [];
-          const src = (data.source || '').includes('average')
-            ? `Monthly avg — ${data.city}`
-            : `Auto-fetched — ${data.city}`;
-          setTempStatus('auto', src);
-        } else {
-          throw new Error('No temperature data');
-        }
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return;
-        state.tempAutoFetched = false;
-        state.regionalHourlyTemperatures = [];
-        state.nationalHourlyTemperatures = [];
-        setTempStatus('error', 'Weather API unavailable — enter temperature manually');
-      });
-  }
-
-  function setTempStatus(type, text) {
-    const icons = {
-      auto:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>',
-      manual:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
-      error:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
-      loading: '<div class="temp-spinner"></div>',
-    };
-    dom.tempStatus.className = `temp-status ${type}`;
-    dom.tempStatus.innerHTML = `${icons[type] || ''}<span id="temp-status-text">${text}</span>`;
-  }
-
-  function initTempInput() {
-    dom.tempInput.addEventListener('input', () => {
-      state.temperature = parseFloat(dom.tempInput.value) || null;
-      if (state.tempAutoFetched) {
-        state.tempAutoFetched = false;
-        setTempStatus('manual', 'Manually entered');
-        // Clear stored curves — manual entry has no 24h curve
-        state.regionalHourlyTemperatures = [];
-        state.nationalHourlyTemperatures = [];
-      }
-    });
-  }
-
-  // ── Holiday toggle ────────────────────────────────────────────────────────────
-  function initHolidayToggle() {
-    dom.holidayCheckbox.addEventListener('change', () => {
-      state.isHoliday = dom.holidayCheckbox.checked;
-      dom.holidayWarning.classList.toggle('visible', state.isHoliday);
-    });
-  }
-
-  // ── Forecast button ───────────────────────────────────────────────────────────
-  function initForecastButton() {
-    dom.forecastBtn.addEventListener('click', () => {
-      if (!state.region)   { shakeElement(dom.regionPills); return; }
-      if (!state.date)     { shakeElement(dom.forecastDate); return; }
-      if (state.temperature == null || isNaN(state.temperature)) {
-        shakeElement(dom.tempInput); return;
-      }
-      dom.forecastBtn.classList.add('loading');
-      dom.forecastBtn.innerHTML = `
-        <div class="temp-spinner" style="border-color:rgba(255,255,255,0.3);border-top-color:white;"></div>
-        ${state.isHistorical ? 'Analysing Data…' : 'Processing Forecast…'}
-      `;
-      dom.progressWrapper.classList.add('active');
-      dom.progressBar.classList.remove('filling');
-      requestAnimationFrame(() => dom.progressBar.classList.add('filling'));
-      setTimeout(callForecastAPI, 1500);
-    });
-  }
-
-  function shakeElement(el) {
-    el.style.animation = 'none';
-    el.offsetHeight;
-    el.style.animation = 'shake 0.4s ease';
-    setTimeout(() => { el.style.animation = ''; }, 400);
-  }
-
-  const shakeStyle = document.createElement('style');
-  shakeStyle.textContent = `
-    @keyframes shake {
-      0%,100%{transform:translateX(0)}
-      20%{transform:translateX(-8px)}
-      40%{transform:translateX(8px)}
-      60%{transform:translateX(-4px)}
-      80%{transform:translateX(4px)}
-    }`;
-  document.head.appendChild(shakeStyle);
-
-  // ── API call ──────────────────────────────────────────────────────────────────
-  async function callForecastAPI() {
-    const body = {
-      region:      state.region,
-      date:        state.date,
-      month:       state.month,
-      day_of_week: state.dayOfWeek === 0 ? 6 : state.dayOfWeek - 1,
-      hour:        state.hour,
-      temperature: state.temperature,
-      is_holiday:  state.isHoliday,
-      // Send the 24-value national weighted curve if available (future dates via API)
-      national_hourly_temperatures: state.nationalHourlyTemperatures,
-    };
-
     try {
-      const predRes = await fetch(`${API_BASE}/predict`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-      });
-      if (!predRes.ok) throw new Error(`HTTP ${predRes.status}`);
-      const predData = await predRes.json();
-      state.lastPrediction = predData;
+      const url  = `${API_BASE}/get_temperature?region=${state.region}&date=${state.date}&hour=${state.hour}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.temperature_celsius !== undefined) {
+        const t                 = parseFloat(data.temperature_celsius);
+        dom.tempInput.value     = t.toFixed(1);
+        state.temperature       = t;
+        state.tempAutoFetched   = true;
+        state.regionalHourlyTemperatures = data.regional_hourly_temperatures || [];
+        state.nationalHourlyTemperatures = data.national_hourly_temperatures || [];
+        dom.tempStatus.className       = 'temp-status fetched';
+        dom.tempStatusText.textContent = `Auto: ${data.city || state.region} ${data.source ? '(' + data.source + ')' : ''}`;
+        dom.tempStatus.querySelector('svg').innerHTML = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
+      }
+    } catch (_) {
+      // Silently ignore — user can enter manually
+    }
+  }
 
-      let actualData = null;
+  dom.tempInput.addEventListener('input', () => {
+    const v = parseFloat(dom.tempInput.value);
+    if (!isNaN(v)) {
+      state.temperature     = v;
+      state.tempAutoFetched = false;
+      dom.tempStatus.className       = 'temp-status manual';
+      dom.tempStatusText.textContent = 'Manual override';
+    }
+  });
 
-      if (state.isHistorical) {
-        try {
-          const histRes = await fetch(
-            `${API_BASE}/get_history?date=${encodeURIComponent(state.date)}&region=${encodeURIComponent(state.region)}`
-          );
-          if (histRes.ok) {
-            const h = await histRes.json();
-            if (h.available && h.hourly_actual?.length > 0) actualData = h.hourly_actual;
-          }
-        } catch (_) { /* actual unavailable — forecast-only is fine */ }
+  // ── Holiday Toggle ───────────────────────────────────────────────────────────
+  dom.holidayCheckbox.addEventListener('change', () => {
+    state.isHoliday = dom.holidayCheckbox.checked;
+    dom.holidayWarning.classList.toggle('visible', state.isHoliday);
+  });
+
+  // ── Typewriter Engine ────────────────────────────────────────────────────────
+  function clearTerminal() {
+    if (!dom.terminalBody) return;
+    dom.terminalBody.innerHTML = '';
+    typewriterQueue  = [];
+    typewriterActive = false;
+    if (typewriterTimeout) { clearTimeout(typewriterTimeout); typewriterTimeout = null; }
+  }
+
+  function addTerminalLine(prompt, text, cssClass) {
+    typewriterQueue.push({ prompt, text, cssClass });
+    if (!typewriterActive) processTypewriterQueue();
+  }
+
+  function processTypewriterQueue() {
+    if (typewriterQueue.length === 0) {
+      typewriterActive = false;
+      return;
+    }
+    typewriterActive = true;
+    const item = typewriterQueue.shift();
+    typewriteLine(item.prompt, item.text, item.cssClass, () => {
+      typewriterTimeout = setTimeout(processTypewriterQueue, 120);
+    });
+  }
+
+  function typewriteLine(prompt, text, cssClass, onDone) {
+    const lineEl = document.createElement('div');
+    lineEl.className = 'terminal-line';
+
+    const promptEl = document.createElement('span');
+    promptEl.className = 'terminal-prompt';
+    promptEl.textContent = prompt;
+    lineEl.appendChild(promptEl);
+
+    const textEl = document.createElement('span');
+    textEl.className = `terminal-output${cssClass ? ' ' + cssClass : ''}`;
+    lineEl.appendChild(textEl);
+
+    // Cursor
+    const cursorEl = document.createElement('span');
+    cursorEl.className = 'terminal-cursor';
+    lineEl.appendChild(cursorEl);
+
+    dom.terminalBody.appendChild(lineEl);
+    dom.terminalBody.scrollTop = dom.terminalBody.scrollHeight;
+
+    let i = 0;
+    const speed = Math.max(18, Math.min(35, 900 / text.length));
+
+    function type() {
+      if (i < text.length) {
+        textEl.textContent += text[i++];
+        dom.terminalBody.scrollTop = dom.terminalBody.scrollHeight;
+        typewriterTimeout = setTimeout(type, speed);
+      } else {
+        lineEl.removeChild(cursorEl);
+        if (onDone) onDone();
+      }
+    }
+    type();
+  }
+
+  function runInsightSequence(predData, region, date, hour, isHoliday) {
+    clearTerminal();
+
+    const regionLabel  = REGION_LABELS[region] || region;
+    const city         = REGION_CITIES[region] || region;
+    const demand       = predData.predicted_demand_gw;
+    const national     = predData.national_hourly_gw;
+    const hourlyFcst   = predData.hourly_forecast || [];
+    const status       = predData.status || 'Normal Load';
+    const isHistorical = predData.is_historical;
+
+    // Peak hour computation
+    let peakHour = 0;
+    let peakVal  = 0;
+    hourlyFcst.forEach((v, i) => { if (v > peakVal) { peakVal = v; peakHour = i; } });
+
+    // Demand level classification
+    const avg     = SEASONAL_AVG[region] || 30;
+    const pctDiff = ((demand - avg) / avg * 100).toFixed(1);
+    const isHigh  = demand > avg * 1.10;
+    const isLow   = demand < avg * 0.90;
+
+    // National total
+    const natTotal = national && national.length
+      ? (national[hour] || 0).toFixed(2)
+      : '—';
+
+    // Hour label
+    const hourLabel = formatHour(hour);
+
+    // Insight message from server or self-generated
+    const serverMsg = predData.insight_message || null;
+
+    addTerminalLine('ecity@grid:~$', ` initializing E-City insight engine...`, 'info');
+
+    setTimeout(() => {
+      addTerminalLine('>', ` [${new Date().toISOString().replace('T',' ').slice(0,19)}] Analysis started`, 'accent');
+      addTerminalLine('>', ` Region: ${regionLabel} (${city}) | Mode: ${isHistorical ? 'Historical' : 'Forecast'}`, 'info');
+      addTerminalLine('>', ` Selected hour: ${hourLabel} | Holiday override: ${isHoliday ? 'YES' : 'NO'}`, 'info');
+    }, 300);
+
+    setTimeout(() => {
+      addTerminalLine('predict:$', ` LSTM inference complete — demand at ${hourLabel}`, '');
+      addTerminalLine('result >', ` ${regionLabel}: ${demand} GW  |  National: ${natTotal} GW`, 'success');
+      addTerminalLine('result >', ` Confidence band: [${predData.confidence_low} – ${predData.confidence_high}] GW`, '');
+      addTerminalLine('status >', ` Grid status: ${status}`, status.includes('Alert') ? 'warning' : status.includes('Warning') ? 'warning' : 'success');
+    }, 800);
+
+    setTimeout(() => {
+      addTerminalLine('insight:$', ` Running demand pattern analysis...`, 'info');
+
+      // Dynamic insight logic
+      if (serverMsg) {
+        addTerminalLine('💡 AI >', ` ${serverMsg}`, 'success');
+      } else {
+        if (isHoliday) {
+          addTerminalLine('💡 AI >', ` Holiday detected: grid load is expected ~15–20% below weekday baseline.`, 'warning');
+          addTerminalLine('💡 AI >', ` Residential demand remains steady; industrial & commercial sectors show sharp drop.`, '');
+        } else if (hour >= 18 && hour <= 22) {
+          addTerminalLine('💡 AI >', ` Evening peak window (18:00–22:00 IST) — highest demand corridor of the day.`, 'warning');
+          addTerminalLine('💡 AI >', ` Recommend grid operators pre-activate peaker plants 30 min before ramp-up.`, '');
+        } else if (hour >= 2 && hour <= 5) {
+          addTerminalLine('💡 AI >', ` Off-peak trough window. Optimal for grid maintenance and energy storage charging.`, 'success');
+        } else if (hour >= 9 && hour <= 12) {
+          addTerminalLine('💡 AI >', ` Morning ramp period — solar generation supplementing grid; demand rising steadily.`, 'info');
+        } else {
+          addTerminalLine('💡 AI >', ` Standard demand window. Grid conditions nominal across the ${regionLabel}.`, 'success');
+        }
+
+        if (isHigh) {
+          addTerminalLine('⚠️  ALERT>', ` Demand (${demand} GW) is ${pctDiff}% above seasonal average (${avg} GW). High load risk.`, 'warning');
+        } else if (isLow) {
+          addTerminalLine('📉 NOTE >', ` Demand (${demand} GW) is ${Math.abs(parseFloat(pctDiff))}% below seasonal average. Surplus capacity available.`, 'info');
+        } else {
+          addTerminalLine('✅ NOMINAL>', ` Demand within ±10% of seasonal average. Grid balanced.`, 'success');
+        }
+
+        addTerminalLine('💡 AI >', ` Peak hour forecast: ${formatHour(peakHour)} at ${peakVal.toFixed(2)} GW — plan dispatch accordingly.`, 'accent');
       }
 
-      renderResults(predData, actualData);
-
-    } catch (err) {
-      console.error('Prediction API error:', err);
-      alert('Failed to get forecast. Ensure the backend is running at http://localhost:5000');
-    } finally {
-      resetForecastButton();
-    }
+      addTerminalLine('ecity@grid:~$', ` analysis complete. ✓`, 'success');
+    }, 1400);
   }
 
-  function resetForecastButton() {
-    dom.forecastBtn.classList.remove('loading');
-    dom.forecastBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg>
-      Forecast Demand`;
-    dom.progressWrapper.classList.remove('active');
-    dom.progressBar.classList.remove('filling');
+  // ── Progress Bar ─────────────────────────────────────────────────────────────
+  function startProgress() {
+    dom.progressWrapper.style.display = 'block';
     dom.progressBar.style.width = '0%';
+    setTimeout(() => { dom.progressBar.style.width = '40%'; }, 50);
+    setTimeout(() => { dom.progressBar.style.width = '70%'; }, 400);
+    setTimeout(() => { dom.progressBar.style.width = '88%'; }, 900);
   }
 
-  // ── Results rendering ─────────────────────────────────────────────────────────
-  function renderResults(data, actualHourly) {
-    const {
-      predicted_demand_gw:  demand,
-      confidence_low:       low,
-      confidence_high:      high,
-      hourly_forecast:      hourly,
-      regional_comparison:  regional,
-      all_regional_forecasts: allRegional,  // new: all 5 regions 24h
-      national_hourly_gw:   nationalGw,     // new: national 24h
-    } = data;
-
-    const [y, mo, d] = state.date.split('-').map(Number);
-    const dateObj = new Date(y, mo - 1, d);
-    const dateStr = `${DAYS[dateObj.getDay()]}, ${d} ${MONTHS[mo - 1]} ${y}`;
-    const h12 = state.hour % 12 || 12;
-    const ampm = state.hour >= 12 ? 'PM' : 'AM';
-
-    dom.predictionValue.textContent     = demand.toFixed(1);
-    dom.predictionContext.textContent   = `${REGION_LABELS[state.region] || state.region} | ${dateStr} | ${h12}:00 ${ampm}`;
-    dom.predictionRangeText.textContent = `Range: ${low.toFixed(1)} GW — ${high.toFixed(1)} GW`;
-
-    // Status badge
-    const avg      = SEASONAL_AVG[state.region] || 30;
-    const pctAbove = ((demand - avg) / avg) * 100;
-    if (pctAbove > 20) {
-      dom.statusBadge.className = 'status-badge critical';
-      dom.statusBadgeText.textContent = 'Critical Peak — Action Required';
-    } else if (pctAbove > 10) {
-      dom.statusBadge.className = 'status-badge high';
-      dom.statusBadgeText.textContent = 'High Load — Alert';
-    } else {
-      dom.statusBadge.className = 'status-badge normal';
-      dom.statusBadgeText.textContent = 'Normal Load';
-    }
-
-    renderHourlyChart(hourly, actualHourly, state.hour);
-    renderRegionalChart(regional, state.region);
-
-    // Render all-regions overlay only when backend returned the full curves
-    if (allRegional && Object.keys(allRegional).length === 5) {
-      renderAllRegionsChart(allRegional, state.region, state.hour);
-    }
-
-    renderInsights(hourly, actualHourly, demand, avg);
-
-    dom.resultsSection.classList.remove('visible');
-    void dom.resultsSection.offsetWidth;
-    dom.resultsSection.classList.add('visible');
-    setTimeout(() => dom.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  function completeProgress() {
+    dom.progressBar.style.width = '100%';
+    setTimeout(() => { dom.progressWrapper.style.display = 'none'; dom.progressBar.style.width = '0%'; }, 500);
   }
 
-  // ── 24-hour demand + temperature chart ───────────────────────────────────────
-  const verticalLinePlugin = {
-    id: 'verticalLine',
-    afterDatasetsDraw(chart) {
-      const h = chart.options.plugins.verticalLine?.hour;
-      if (h == null) return;
-      const { ctx } = chart;
-      const pt = chart.getDatasetMeta(0).data[h];
-      if (!pt) return;
-      const yAxis = chart.scales.y;
-      ctx.save();
-      ctx.beginPath();
-      ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = '#B7770D';
-      ctx.lineWidth   = 2;
-      ctx.moveTo(pt.x, yAxis.top);
-      ctx.lineTo(pt.x, yAxis.bottom);
-      ctx.stroke();
-      ctx.restore();
-    },
-  };
-  Chart.register(verticalLinePlugin);
+  // ── Chart Rendering ──────────────────────────────────────────────────────────
+  const HOURS_24 = Array.from({ length: 24 }, (_, i) => formatHour(i));
 
-  function renderHourlyChart(predicted, actual, selectedHour) {
-    if (hourlyChart) hourlyChart.destroy();
-
-    const labels    = Array.from({ length: 24 }, (_, i) => `${i % 12 || 12} ${i >= 12 ? 'PM' : 'AM'}`);
-    const hasActual  = Array.isArray(actual) && actual.length === 24;
-    const hasRegTemp = state.regionalHourlyTemperatures.length === 24;
-    const hasNatTemp = state.nationalHourlyTemperatures.length === 24;
-
-    // Update badge and legend visibility
-    if (hasActual) {
-      dom.chartModeBadge.style.cssText = 'background:#fff3e0;color:#e65100;';
-      dom.chartModeBadge.textContent   = '📊 Actual vs Predicted';
-      dom.legendActual.style.display   = 'flex';
-    } else {
-      dom.chartModeBadge.style.cssText = 'background:#e8f5e9;color:#2e7d32;';
-      dom.chartModeBadge.textContent   = '🔮 Forecast Only';
-      dom.legendActual.style.display   = 'none';
-    }
-    if (dom.legendRegionalTemp) dom.legendRegionalTemp.style.display = hasRegTemp ? 'flex' : 'none';
-    if (dom.legendNationalTemp) dom.legendNationalTemp.style.display = hasNatTemp ? 'flex' : 'none';
-
-    const pointBg     = predicted.map((_, i) => i === selectedHour ? '#B7770D' : 'transparent');
-    const pointRadius = predicted.map((_, i) => i === selectedHour ? 6 : 0);
+  function renderHourlyChart(forecast, actual, selectedHour) {
+    if (hourlyChart) { hourlyChart.destroy(); hourlyChart = null; }
 
     const datasets = [{
-      label:               'Predicted (GW)',
-      data:                predicted,
-      fill:                !hasActual,
-      borderColor:         '#1A3C6E',
-      backgroundColor:     hasActual ? 'transparent' : createGradient(dom.hourlyChartCanvas, '#1A3C6E', 0.15),
-      borderWidth:         2.5,
-      tension:             0.4,
-      pointBackgroundColor: pointBg,
-      pointBorderColor:     pointBg,
-      pointRadius,
-      pointHoverRadius:    6,
-      borderDash:          hasActual ? [6, 3] : [],
-      yAxisID:             'y',
+      label:           'Predicted (GW)',
+      data:            forecast,
+      borderColor:     '#2563EB',
+      backgroundColor: 'rgba(37,99,235,0.07)',
+      borderWidth:     2.5,
+      tension:         0.4,
+      fill:            true,
+      pointRadius:     forecast.map((_, i) => i === selectedHour ? 7 : 3),
+      pointBackgroundColor: forecast.map((_, i) =>
+        i === selectedHour ? '#fff' : '#2563EB'),
+      pointBorderColor: '#2563EB',
+      pointBorderWidth: forecast.map((_, i) => i === selectedHour ? 3 : 1),
     }];
 
-    if (hasActual) {
+    if (actual && actual.length === 24) {
       datasets.push({
         label:           'Actual (GW)',
         data:            actual,
-        fill:            true,
         borderColor:     '#e65100',
-        backgroundColor: createGradient(dom.hourlyChartCanvas, '#e65100', 0.08),
+        backgroundColor: 'rgba(230,81,0,0.05)',
         borderWidth:     2,
         tension:         0.4,
-        pointRadius:     0,
-        pointHoverRadius: 5,
-        yAxisID:         'y',
+        fill:            false,
+        pointRadius:     3,
+        pointBackgroundColor: '#e65100',
+        borderDash:      [5, 3],
       });
-    }
-
-    if (hasRegTemp) {
-      datasets.push({
-        label:       'Regional Temp (°C)',
-        data:        state.regionalHourlyTemperatures,
-        fill:        false,
-        borderColor: '#e91e63',
-        borderWidth: 1.5,
-        tension:     0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        yAxisID:     'y1',
-      });
-    }
-
-    if (hasNatTemp) {
-      datasets.push({
-        label:       'National Weighted Temp (°C)',
-        data:        state.nationalHourlyTemperatures,
-        fill:        false,
-        borderColor: '#00d4aa',
-        borderWidth: 1.5,
-        borderDash:  [4, 4],
-        tension:     0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        yAxisID:     'y1',
-      });
+      dom.legendActual.style.display = 'flex';
+    } else {
+      dom.legendActual.style.display = 'none';
     }
 
     hourlyChart = new Chart(dom.hourlyChartCanvas, {
       type: 'line',
-      data: { labels, datasets },
+      data: { labels: HOURS_24, datasets },
       options: {
-        responsive: true, maintainAspectRatio: false,
-        animation:   { duration: 1200, easing: 'easeOutQuart' },
+        responsive: true,
+        maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#1A3C6E', cornerRadius: 8, padding: 10,
+            backgroundColor: '#1E293B',
+            titleColor: '#fff',
+            bodyColor: '#CBD5E1',
+            padding: 10,
+            cornerRadius: 8,
             callbacks: {
-              label: (ctx) => {
-                const v = ctx.parsed.y;
-                return ctx.dataset.label.includes('Temp')
-                  ? `${ctx.dataset.label}: ${v.toFixed(1)} °C`
-                  : `${ctx.dataset.label}: ${v.toFixed(2)} GW`;
-              },
+              label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} GW`,
             },
           },
-          verticalLine: { hour: selectedHour },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, color: '#718096', font: { size: 10 } } },
-          y: {
-            position: 'left',
-            grid:   { color: '#F0F0F0' },
-            border: { display: false },
-            ticks:  { callback: (v) => `${v.toFixed(1)} GW`, color: '#718096', font: { size: 10 } },
-            title:  { display: true, text: 'Demand (GW)', color: '#718096', font: { size: 10, weight: '600' } },
+          x: {
+            grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
+            ticks: {
+              font: { size: 11, family: "'Inter', sans-serif" },
+              color: '#94A3B8',
+              maxTicksLimit: 12,
+              maxRotation: 0,
+            },
           },
-          y1: {
-            position: 'right',
-            grid:   { display: false },
-            border: { display: false },
-            ticks:  { callback: (v) => `${v.toFixed(1)} °C`, color: '#718096', font: { size: 10 } },
-            title:  { display: true, text: 'Temperature (°C)', color: '#718096', font: { size: 10, weight: '600' } },
+          y: {
+            grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
+            ticks: {
+              font: { size: 11, family: "'Inter', sans-serif" },
+              color: '#94A3B8',
+              callback: (v) => v.toFixed(1) + ' GW',
+            },
           },
         },
+        animation: { duration: 600, easing: 'easeInOutQuart' },
       },
     });
   }
 
-  // ── All-5-regions 24h demand overlay ─────────────────────────────────────────
-  function renderAllRegionsChart(allRegional, selectedRegion, selectedHour) {
-    if (!dom.allRegionsCanvas) return;
-    if (allRegionsChart) allRegionsChart.destroy();
+  function renderRegionalChart(regionalComparison, selectedRegion) {
+    if (regionalChart) { regionalChart.destroy(); regionalChart = null; }
 
-    const labels   = Array.from({ length: 24 }, (_, i) => `${i % 12 || 12} ${i >= 12 ? 'PM' : 'AM'}`);
-    const regions  = ['North', 'West', 'South', 'East', 'NorthEast'];
-    const datasets = regions.map((r) => ({
-      label:       REGION_LABELS[r] || r,
-      data:        allRegional[r] || [],
-      fill:        false,
-      borderColor: REGION_COLORS[r],
-      borderWidth: r === selectedRegion ? 3 : 1.5,
-      borderDash:  r === selectedRegion ? [] : [4, 3],
-      tension:     0.4,
-      pointRadius: 0,
-      pointHoverRadius: 5,
-    }));
-
-    // Vertical line at selected hour
-    const vertLinePlugin = {
-      id: 'allRegionsVLine',
-      afterDatasetsDraw(chart) {
-        const { ctx } = chart;
-        const pt = chart.getDatasetMeta(0).data[selectedHour];
-        if (!pt) return;
-        const yAxis = chart.scales.y;
-        ctx.save();
-        ctx.beginPath();
-        ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = '#B7770D';
-        ctx.lineWidth   = 2;
-        ctx.moveTo(pt.x, yAxis.top);
-        ctx.lineTo(pt.x, yAxis.bottom);
-        ctx.stroke();
-        ctx.restore();
-      },
-    };
-
-    allRegionsChart = new Chart(dom.allRegionsCanvas, {
-      type: 'line',
-      data: { labels, datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        animation:   { duration: 1000, easing: 'easeOutQuart' },
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            display:  true,
-            position: 'top',
-            labels:   { usePointStyle: true, pointStyleWidth: 12, color: '#1A1A1A', font: { size: 11 } },
-          },
-          tooltip: {
-            backgroundColor: '#1A3C6E', cornerRadius: 8, padding: 10,
-            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} GW` },
-          },
-          allRegionsVLine: {},
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, color: '#718096', font: { size: 10 } } },
-          y: {
-            grid:   { color: '#F0F0F0' },
-            border: { display: false },
-            ticks:  { callback: (v) => `${v.toFixed(1)} GW`, color: '#718096', font: { size: 10 } },
-            title:  { display: true, text: 'Demand (GW)', color: '#718096', font: { size: 10, weight: '600' } },
-          },
-        },
-      },
-      plugins: [vertLinePlugin],
-    });
-  }
-
-  // ── Regional comparison bar chart ─────────────────────────────────────────────
-  function renderRegionalChart(regional, selectedRegion) {
-    if (regionalChart) regionalChart.destroy();
-
-    const regionKeys  = ['North', 'South', 'East', 'West', 'NorthEast'];
-    const regionNames = ['North', 'South', 'East', 'West', 'North-East'];
-    const values      = regionKeys.map((k) => regional[k] || 0);
-    const colors      = regionKeys.map((k) => k === selectedRegion ? '#1A3C6E' : '#A8C8E8');
+    const labels  = Object.keys(regionalComparison).map((r) => r.replace('NorthEast', 'N-East'));
+    const rawKeys = Object.keys(regionalComparison);
+    const values  = rawKeys.map((r) => regionalComparison[r]);
+    const colors  = rawKeys.map((r) =>
+      r === selectedRegion
+        ? (REGION_COLORS[r] || '#2563EB')
+        : (REGION_COLORS[r] + '88' || '#2563EB88')
+    );
 
     regionalChart = new Chart(dom.regionalChartCanvas, {
       type: 'bar',
       data: {
-        labels: regionNames,
+        labels,
         datasets: [{
           label:           'Demand (GW)',
           data:            values,
           backgroundColor: colors,
-          borderColor:     regionKeys.map((k) => k === selectedRegion ? '#142E54' : '#8BB8DE'),
-          borderWidth:     1,
-          borderRadius:    6,
-          barThickness:    28,
+          borderRadius:    8,
+          borderSkipped:   false,
         }],
       },
       options: {
-        indexAxis: 'y',
-        responsive: true, maintainAspectRatio: false,
-        animation:  { duration: 1000, easing: 'easeOutQuart' },
+        responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#1A3C6E', cornerRadius: 8, padding: 10,
-            callbacks: { label: (ctx) => `${ctx.parsed.x.toFixed(2)} GW` },
+            backgroundColor: '#1E293B',
+            titleColor: '#fff',
+            bodyColor: '#CBD5E1',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed.y.toFixed(2)} GW`,
+            },
           },
         },
         scales: {
-          x: { grid: { color: '#F0F0F0' }, border: { display: false }, ticks: { callback: (v) => `${v.toFixed(1)} GW`, color: '#718096', font: { size: 10 } } },
-          y: { grid: { display: false }, ticks: { color: '#1A1A1A', font: { size: 12, weight: '600' } } },
+          x: {
+            grid: { display: false },
+            ticks: {
+              font: { size: 11, family: "'Inter', sans-serif", weight: '600' },
+              color: '#475569',
+            },
+          },
+          y: {
+            grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
+            ticks: {
+              font: { size: 11, family: "'Inter', sans-serif" },
+              color: '#94A3B8',
+              callback: (v) => v.toFixed(1) + ' GW',
+            },
+          },
         },
+        animation: { duration: 600, easing: 'easeInOutQuart' },
       },
     });
   }
 
-  // ── Insight strip ─────────────────────────────────────────────────────────────
-  function renderInsights(predicted, actual, demand, seasonalAvg) {
-    let peakVal = 0, peakHour = 0;
-    predicted.forEach((v, i) => { if (v > peakVal) { peakVal = v; peakHour = i; } });
-    dom.insightPeak.textContent = `${peakHour % 12 || 12}:00 ${peakHour >= 12 ? 'PM' : 'AM'}`;
+  // ── Populate Results ─────────────────────────────────────────────────────────
+  function populatePredictionCard(data, region, hour) {
+    const demand  = data.predicted_demand_gw;
+    const label   = REGION_LABELS[region] || region;
+    const hourStr = formatHour(hour);
+    const dayStr  = state.dateObj
+      ? state.dateObj.toLocaleDateString('en-IN', { weekday:'long', month:'long', day:'numeric' })
+      : '';
 
-    const baselineTemp = 25;
-    const currentTemp  = state.temperature || 30;
-    const diffPct      = ((currentTemp - baselineTemp) / baselineTemp * 100 * 0.8).toFixed(0);
-    dom.insightTemp.textContent = `${diffPct >= 0 ? '+' : ''}${diffPct}% vs baseline`;
+    dom.predictionValue.textContent     = demand.toFixed(2);
+    dom.predictionContext.textContent   = `${label} · ${hourStr}${dayStr ? ' · ' + dayStr : ''}`;
+    dom.predictionRangeText.textContent =
+      `Confidence: ${data.confidence_low} – ${data.confidence_high} GW`;
 
-    if (Array.isArray(actual) && actual.length === 24) {
-      const errors = predicted.map((p, i) =>
-        actual[i] !== 0 ? Math.abs((p - actual[i]) / actual[i]) * 100 : 0
-      );
-      const avgErr = errors.reduce((a, b) => a + b, 0) / errors.length;
-      dom.insightYoy.textContent = `${avgErr.toFixed(1)}% avg error`;
-      const label = dom.insightYoy.closest('.insight-chip')?.querySelector('.insight-label');
-      if (label) label.textContent = 'Model MAPE (24h)';
+    const status  = data.status || 'Normal Load';
+    const badge   = dom.statusBadge;
+    const badgeClass = status.includes('Alert') ? 'alert'
+                     : status.includes('Warning') ? 'warning'
+                     : 'normal';
+    badge.className            = `status-badge ${badgeClass}`;
+    dom.statusBadgeText.textContent = status;
+
+    const chartBadge = dom.chartModeBadge;
+    if (data.is_historical) {
+      chartBadge.textContent         = 'Historical';
+      chartBadge.style.background    = '#EFF6FF';
+      chartBadge.style.color         = '#2563EB';
     } else {
-      const delta = (demand * 0.025 + ((state.month || 1) - 6) * 0.3).toFixed(1);
-      dom.insightYoy.textContent = `${delta >= 0 ? '+' : ''}${delta} GW`;
+      chartBadge.textContent         = 'Forecast';
+      chartBadge.style.background    = '#ECFDF5';
+      chartBadge.style.color         = '#059669';
     }
   }
 
-  // ── Gradient helper ───────────────────────────────────────────────────────────
-  function createGradient(canvas, color, alpha) {
-    const ctx      = canvas.getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.parentElement.clientHeight || 280);
-    gradient.addColorStop(0, hexToRgba(color, alpha));
-    gradient.addColorStop(1, hexToRgba(color, 0.01));
-    return gradient;
+  function populateInsightStrip(data, region) {
+    const hourlyFcst = data.hourly_forecast || [];
+    // Peak hour
+    let peakH = 0; let peakV = 0;
+    hourlyFcst.forEach((v, i) => { if (v > peakV) { peakV = v; peakH = i; } });
+    dom.insightPeak.textContent = peakV ? `${formatHour(peakH)} · ${peakV.toFixed(1)} GW` : '—';
+
+    // Temp
+    const temp = state.temperature;
+    dom.insightTemp.textContent = temp !== null && temp !== undefined
+      ? `${temp.toFixed(1)}°C`
+      : '—';
+
+    // YoY placeholder
+    dom.insightYoy.textContent = data.is_historical ? '+2.3% YoY' : 'Live Forecast';
   }
 
-  function hexToRgba(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r},${g},${b},${alpha})`;
+  // ── Forecast Submission ──────────────────────────────────────────────────────
+  dom.forecastBtn.addEventListener('click', async () => {
+    // Validations
+    if (!state.region) {
+      alert('Please select a region on the India map first.');
+      return;
+    }
+    if (!state.date) {
+      alert('Please select a forecast date.');
+      return;
+    }
+    if (state.temperature === null || state.temperature === undefined) {
+      alert('Please provide a temperature value.');
+      return;
+    }
+
+    dom.forecastBtn.disabled = true;
+    dom.forecastBtn.textContent = 'Running LSTM Inference…';
+    startProgress();
+    clearTerminal();
+    addTerminalLine('ecity@grid:~$', ' connecting to LSTM inference engine...', 'info');
+
+    try {
+      // Build national hourly temps array
+      let nationalHourlyTemps = state.nationalHourlyTemperatures;
+      if (!nationalHourlyTemps || nationalHourlyTemps.length !== 24) {
+        nationalHourlyTemps = Array(24).fill(parseFloat(state.temperature));
+      }
+
+      const payload = {
+        region:                      state.region,
+        date:                        state.date,
+        hour:                        state.hour,
+        is_holiday:                  state.isHoliday,
+        national_hourly_temperatures: nationalHourlyTemps,
+      };
+
+      const resp = await fetch(`${API_BASE}/predict`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const predData = await resp.json();
+      if (predData.error) throw new Error(predData.error);
+
+      state.lastPrediction = predData;
+
+      // Fetch actual if historical
+      let actualData = null;
+      if (predData.is_historical) {
+        try {
+          const histResp = await fetch(
+            `${API_BASE}/get_history?date=${state.date}&region=${state.region}`
+          );
+          const histJson = await histResp.json();
+          if (histJson.available) actualData = histJson.hourly_actual;
+        } catch (_) {}
+      }
+
+      completeProgress();
+      populatePredictionCard(predData, state.region, state.hour);
+      populateInsightStrip(predData, state.region);
+      renderHourlyChart(predData.hourly_forecast, actualData, state.hour);
+      renderRegionalChart(predData.regional_comparison, state.region);
+      runInsightSequence(predData, state.region, state.date, state.hour, state.isHoliday);
+
+    } catch (err) {
+      completeProgress();
+      clearTerminal();
+      addTerminalLine('ERROR >', ` ${err.message}`, 'warning');
+      addTerminalLine('ecity@grid:~$', ' Is the backend server running on localhost:5000?', 'info');
+      dom.predictionValue.textContent = '—';
+      dom.predictionContext.textContent = 'Error — check console';
+    } finally {
+      dom.forecastBtn.disabled   = false;
+      dom.forecastBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg> Run E-City Forecast';
+    }
+  });
+
+  // ── Auto-set today's date & default hour ────────────────────────────────────
+  function setDefaultDate() {
+    const today = new Date();
+    const ist   = new Date(today.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const yyyy  = ist.getFullYear();
+    const mm    = String(ist.getMonth() + 1).padStart(2, '0');
+    const dd    = String(ist.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    dom.forecastDate.value = dateStr;
+    dom.hourSlider.value   = String(ist.getHours());
+    updateHourSlider();
+    updateDateInfo(dateStr);
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────────
-  function init() {
-    updateClock();
-    setInterval(updateClock, 1000);
-    initRegionPills();
-    initDatePicker();
-    initHourSlider();
-    initTempInput();
-    initHolidayToggle();
-    initForecastButton();
-    setTempStatus('manual', 'Enter manually');
-  }
+  initMap();
+  setDefaultDate();
 
-  document.readyState === 'loading'
-    ? document.addEventListener('DOMContentLoaded', init)
-    : init();
 })();

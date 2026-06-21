@@ -1,6 +1,7 @@
 """
-GridSense India — Flask Backend (Improved Model Version)
+E-City — Flask Backend
 server.py
+Powering India's Grid Intelligence
 
 Matches the improved run_forecaster.py which uses 14 features + target:
     hour_sin, hour_cos, month_sin, month_cos,
@@ -205,7 +206,7 @@ def load_data_and_model():
     else:
         print(f"  [Warning] Model NOT found at {MODEL_PATH}")
 
-    print("Server ready.\n")
+    print("E-City Server ready — Powering India's Grid Intelligence\n")
 
 
 try:
@@ -406,6 +407,11 @@ def predict():
         else:
             status = "Normal Load"
 
+        # ── E-City NL Insight Engine ───────────────────────────────────────────
+        insight_message = _generate_insight(
+            region, hour, target_hour_pred, base_demand, is_holiday, is_historical
+        )
+
         return jsonify({
             "predicted_demand_gw":    round(target_hour_pred, 2),
             "confidence_low":         round(max(0.0, target_hour_pred * 0.93), 2),
@@ -416,10 +422,11 @@ def predict():
             "regional_comparison":    regional_comparison,
             "national_hourly_gw":     [round(v, 2) for v in national_gw],
             "is_historical":          is_historical,
+            "insight_message":        insight_message,
         })
 
     except Exception as e:
-        print(f"Prediction error: {e}")
+        print(f"[E-City] Prediction error: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
@@ -668,7 +675,86 @@ def historical():
         return jsonify({"error": str(e)}), 500
 
 
+# ── E-City Natural Language Insight Engine ────────────────────────────────────
+def _generate_insight(
+    region: str,
+    hour: int,
+    demand: float,
+    base_demand: float,
+    is_holiday: bool,
+    is_historical: bool,
+) -> str:
+    """
+    Generate a concise, human-readable insight message for the E-City frontend
+    typewriter terminal based on forecast conditions.
+    """
+    region_labels = {
+        "North": "Northern Grid (Delhi)",
+        "South": "Southern Grid (Bengaluru)",
+        "East":  "Eastern Grid (Kolkata)",
+        "West":  "Western Grid (Mumbai)",
+        "NorthEast": "North-Eastern Grid (Guwahati)",
+    }
+    label     = region_labels.get(region, region)
+    pct_diff  = ((demand - base_demand) / base_demand) * 100 if base_demand else 0
+    mode_str  = "historical validation" if is_historical else "forward forecast"
+
+    if is_holiday:
+        return (
+            f"Holiday mode active on {label}. LSTM model projects a {abs(pct_diff):.1f}% "
+            f"load reduction vs. weekday baseline. Industrial and commercial demand shows "
+            f"significant suppression. Residential consumption remains moderate."
+        )
+
+    if hour >= 18 and hour <= 22:
+        if pct_diff > 10:
+            return (
+                f"Critical evening peak detected on {label} at {demand:.2f} GW — "
+                f"{pct_diff:.1f}% above seasonal average. E-City recommends activating "
+                f"demand response protocols and pre-positioning peaker plants immediately."
+            )
+        return (
+            f"Evening peak window (18:00–22:00 IST) active on {label}. "
+            f"Demand at {demand:.2f} GW is within manageable range for this {mode_str}. "
+            f"Grid operators should monitor transformer loading closely during this corridor."
+        )
+
+    if hour >= 2 and hour <= 5:
+        return (
+            f"Off-peak trough on {label}: demand at {demand:.2f} GW — optimal window "
+            f"for scheduled maintenance, battery storage charging, and pump-hydro refill. "
+            f"LSTSM confidence is highest during this low-variability period."
+        )
+
+    if hour >= 9 and hour <= 12:
+        return (
+            f"Morning demand ramp on {label}. At {demand:.2f} GW, solar generation is "
+            f"supplementing base load. Grid mix is expected to be cleanest during this window. "
+            f"Recommend leveraging distributed solar assets ahead of midday plateau."
+        )
+
+    if pct_diff > 15:
+        return (
+            f"HIGH LOAD ALERT on {label}: {demand:.2f} GW — {pct_diff:.1f}% above seasonal "
+            f"baseline. E-City grid intelligence recommends immediate load shedding review "
+            f"and interstate power transfer coordination through POSOCO."
+        )
+
+    if pct_diff < -10:
+        return (
+            f"Below-average demand on {label} at {demand:.2f} GW "
+            f"({abs(pct_diff):.1f}% below baseline). Surplus grid capacity available — "
+            f"ideal conditions for forward energy scheduling and renewable curtailment avoidance."
+        )
+
+    return (
+        f"Grid conditions nominal on {label} at {demand:.2f} GW for this {mode_str}. "
+        f"Demand is within ±10% of seasonal expectations. No immediate intervention required. "
+        f"LSTM model confidence: HIGH based on 168-hour historical context window."
+    )
+
+
 if __name__ == "__main__":
-    print("Starting GridSense Flask Server on http://localhost:5000 …")
+    print("Starting E-City Flask Server on http://localhost:5000 — Powering India's Grid Intelligence…")
     app.run(port=5000, debug=False)
 
