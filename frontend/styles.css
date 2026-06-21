@@ -76,8 +76,29 @@ body {
   font-family: var(--font);
   color: var(--text-primary);
   background: var(--canvas);
+  background-image: url('ecity_logo.png');
+  background-repeat: no-repeat;
+  background-position: center 40%;
+  background-size: 520px auto;
+  background-attachment: fixed;
+  /* Very faint watermark effect */
+  position: relative;
   line-height: 1.6;
   min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(244, 247, 246, 0.94);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Header ─────────────────────────────────────────────── */
@@ -102,21 +123,22 @@ body {
 }
 
 .header-logo {
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, var(--ecity-blue), var(--ecity-teal));
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.20);
 }
 
-.header-logo svg {
-  width: 20px;
-  height: 20px;
-  fill: #fff;
+.header-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .header-brand {
@@ -242,11 +264,12 @@ body {
 
 .map-container {
   position: relative;
-  background: linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%);
-  border: 1px solid #E2E8F0;
+  background: linear-gradient(180deg, #FAFCFF 0%, #F3F7FB 100%);
+  border: 1px solid #DBEAFE;
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
+  box-shadow: inset 0 2px 8px rgba(37,99,235,0.05);
 }
 
 .india-svg {
@@ -255,89 +278,71 @@ body {
   display: block;
 }
 
-/* Map region paths */
-.map-region {
-  cursor: pointer;
-  transition: all var(--duration) var(--ease);
-}
-
+/* Base region style */
 .region-path {
-  fill: #C7D2FE;
-  stroke: #fff;
-  stroke-width: 2;
-  transition: fill var(--duration) var(--ease), transform var(--duration) var(--ease);
-  transform-origin: center;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
+  stroke: #ffffff;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  cursor: pointer;
+  transition: fill 180ms ease, filter 180ms ease;
 }
 
-.map-region:hover .region-path {
-  fill: #818CF8;
-  filter: drop-shadow(0 3px 8px rgba(99,102,241,0.4));
-}
+/* Default fill per region */
+.region-path[data-region="North"]     { fill: #B6DBF1; }
+.region-path[data-region="West"]      { fill: #BCEFD0; }
+.region-path[data-region="South"]     { fill: #FBE3A9; }
+.region-path[data-region="East"]      { fill: #E8D6F2; }
+.region-path[data-region="NorthEast"] { fill: #F1B9BF; }
 
-.map-region.selected-north .region-path { fill: var(--color-north); }
-.map-region.selected-south .region-path { fill: var(--color-south); }
-.map-region.selected-east .region-path  { fill: var(--color-east); }
-.map-region.selected-west .region-path  { fill: var(--color-west); }
-.map-region.selected-northeast .region-path { fill: var(--color-northeast); }
+/* Hover per region */
+.region-path[data-region="North"]:hover     { fill: #22D3EE; filter: drop-shadow(0 4px 10px rgba(34,211,238,0.5)); }
+.region-path[data-region="West"]:hover      { fill: #22C55E; filter: drop-shadow(0 4px 10px rgba(34,197,94,0.5)); }
+.region-path[data-region="South"]:hover     { fill: #D4A017; filter: drop-shadow(0 4px 10px rgba(212,160,23,0.5)); }
+.region-path[data-region="East"]:hover      { fill: #4B0082; filter: drop-shadow(0 4px 10px rgba(75,0,130,0.5)); }
+.region-path[data-region="NorthEast"]:hover { fill: #FF1493; filter: drop-shadow(0 4px 10px rgba(255,20,147,0.5)); }
 
-.map-region.selected-north .region-path,
-.map-region.selected-south .region-path,
-.map-region.selected-east .region-path,
-.map-region.selected-west .region-path,
-.map-region.selected-northeast .region-path {
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
-  stroke: rgba(255,255,255,0.8);
-  stroke-width: 2.5;
-}
-
-.region-map-label {
-  font-family: var(--font);
-  font-size: 10px;
-  font-weight: 700;
-  fill: rgba(255,255,255,0.9);
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-}
-
-.map-instruction {
-  font-family: var(--font);
-  font-size: 10px;
-  fill: var(--text-muted);
-  text-anchor: middle;
-}
+/* Selected state per region */
+.region-path[data-region="North"].region-selected     { fill: #22D3EE; filter: drop-shadow(0 0 10px rgba(34,211,238,0.7)); stroke: #fff; stroke-width: 2.5; }
+.region-path[data-region="West"].region-selected      { fill: #22C55E; filter: drop-shadow(0 0 10px rgba(34,197,94,0.7)); stroke: #fff; stroke-width: 2.5; }
+.region-path[data-region="South"].region-selected     { fill: #D4A017; filter: drop-shadow(0 0 10px rgba(212,160,23,0.7)); stroke: #fff; stroke-width: 2.5; }
+.region-path[data-region="East"].region-selected      { fill: #4B0082; filter: drop-shadow(0 0 10px rgba(75,0,130,0.7)); stroke: #fff; stroke-width: 2.5; }
+.region-path[data-region="NorthEast"].region-selected { fill: #FF1493; filter: drop-shadow(0 0 10px rgba(255,20,147,0.7)); stroke: #fff; stroke-width: 2.5; }
 
 /* Map tooltip */
 .map-tooltip {
   position: absolute;
-  background: var(--text-primary);
+  background: #1E293B;
   color: #fff;
   padding: 6px 12px;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s var(--ease);
+  transition: opacity 0.15s ease;
   white-space: nowrap;
-  z-index: 10;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  transform: translate(-50%, -130%);
 }
-
-.map-tooltip.visible {
-  opacity: 1;
+.map-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 100%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1E293B;
 }
+.map-tooltip.visible { opacity: 1; }
 
-/* Selected region display */
+/* Selected region display pill */
 .selected-region-display {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 9px 14px;
   background: var(--canvas);
-  border: 1px solid #E2E8F0;
+  border: 1.5px solid #E2E8F0;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
@@ -352,6 +357,170 @@ body {
   background: #CBD5E1;
   flex-shrink: 0;
   transition: background var(--duration) var(--ease);
+  box-shadow: 0 0 0 3px rgba(203,213,225,0.3);
+}
+
+.map-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.map-container {
+  position: relative;
+  background: linear-gradient(160deg, #EFF6FF 0%, #F0FDFA 50%, #F0F9FF 100%);
+  border: 1px solid #DBEAFE;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: inset 0 2px 8px rgba(37,99,235,0.05);
+}
+
+.india-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Base region path */
+.region-path {
+  fill: #BFDBFE;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  transition: fill 0.2s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+
+/* ── Per-region hover colors ── */
+#map-north:hover .region-path {
+  fill: #60A5FA;   /* blue */
+  filter: drop-shadow(0 0 6px rgba(37,99,235,0.5));
+}
+#map-northeast:hover .region-path {
+  fill: #67E8F9;   /* cyan */
+  filter: drop-shadow(0 0 6px rgba(8,145,178,0.5));
+}
+#map-east:hover .region-path {
+  fill: #FCD34D;   /* amber */
+  filter: drop-shadow(0 0 6px rgba(217,119,6,0.5));
+}
+#map-west:hover .region-path {
+  fill: #C084FC;   /* purple */
+  filter: drop-shadow(0 0 6px rgba(124,58,237,0.5));
+}
+#map-south:hover .region-path {
+  fill: #6EE7B7;   /* green */
+  filter: drop-shadow(0 0 6px rgba(5,150,105,0.5));
+}
+
+/* ── Selected state per region ── */
+#map-north.region-selected .region-path {
+  fill: #2563EB;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(37,99,235,0.6));
+}
+#map-northeast.region-selected .region-path {
+  fill: #0891B2;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(8,145,178,0.6));
+}
+#map-east.region-selected .region-path {
+  fill: #D97706;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(217,119,6,0.6));
+}
+#map-west.region-selected .region-path {
+  fill: #7C3AED;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(124,58,237,0.6));
+}
+#map-south.region-selected .region-path {
+  fill: #059669;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(5,150,105,0.6));
+}
+
+/* Region label text inside SVG */
+.region-label-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  fill: #1E293B;
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  opacity: 0.75;
+}
+
+/* When hovered or selected, make label white */
+.map-region:hover .region-label-text,
+.map-region.region-selected .region-label-text {
+  fill: #fff;
+  opacity: 1;
+}
+
+/* Water body label */
+.water-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  fill: #93C5FD;
+  font-style: italic;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* Map tooltip */
+.map-tooltip {
+  position: absolute;
+  background: #1E293B;
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+.map-tooltip.visible {
+  opacity: 1;
+}
+
+/* Selected region display pill */
+.selected-region-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--canvas);
+  border: 1.5px solid #E2E8F0;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all var(--duration) var(--ease);
+}
+
+.selected-region-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #CBD5E1;
+  flex-shrink: 0;
+  transition: background var(--duration) var(--ease);
+  box-shadow: 0 0 0 3px rgba(203,213,225,0.3);
 }
 
 /* ── Input Groups ───────────────────────────────────────── */

@@ -37,15 +37,15 @@
     NorthEast: 'Guwahati',
   };
 
-  const REGION_COLORS = {
-    North:     '#2563EB',
-    South:     '#059669',
-    East:      '#D97706',
-    West:      '#7C3AED',
-    NorthEast: '#0891B2',
+  const REGION_DOT_COLORS = {
+    North:     '#22D3EE',
+    West:      '#22C55E',
+    South:     '#D4A017',
+    East:      '#4B0082',
+    NorthEast: '#FF1493',
   };
 
-  const REGION_DOT_COLORS = {
+  const REGION_COLORS = {
     North:     '#2563EB',
     South:     '#059669',
     East:      '#D97706',
@@ -121,6 +121,7 @@
     terminalBody:        $('terminal-body'),
     // Map elements
     indiaMap:            $('india-map'),
+    mapContainer:        document.querySelector('.map-container'),
     mapTooltip:          $('map-tooltip'),
     selectedRegionText:  $('selected-region-text'),
     selectedRegionDot:   $('selected-region-dot'),
@@ -143,61 +144,51 @@
 
   // ── SVG Map Interactions ─────────────────────────────────────────────────────
   function initMap() {
-    const regions = dom.indiaMap.querySelectorAll('.map-region');
-    regions.forEach((regionEl) => {
-      const regionId = regionEl.dataset.region;
-
-      regionEl.addEventListener('mouseenter', (e) => {
-        const tooltip = dom.mapTooltip;
-        const label   = REGION_LABELS[regionId] || regionId;
-        const city    = REGION_CITIES[regionId] || '';
-        tooltip.innerHTML = `<strong>${label}</strong>${city ? '<br>' + city : ''}`;
-        tooltip.classList.add('visible');
-        positionTooltip(e);
-      });
-
-      regionEl.addEventListener('mousemove', positionTooltip);
-
-      regionEl.addEventListener('mouseleave', () => {
+    dom.indiaMap.addEventListener('mousemove', (e) => {
+      const target = e.target.closest('.region-path');
+      if (target) {
+        const label = target.getAttribute('data-label') || target.getAttribute('data-region');
+        const rect  = dom.mapContainer.getBoundingClientRect();
+        dom.mapTooltip.textContent = label;
+        dom.mapTooltip.style.left = (e.clientX - rect.left) + 'px';
+        dom.mapTooltip.style.top  = (e.clientY - rect.top) + 'px';
+        dom.mapTooltip.classList.add('visible');
+      } else {
         dom.mapTooltip.classList.remove('visible');
-      });
-
-      regionEl.addEventListener('click', () => {
-        selectRegion(regionId);
-      });
+      }
     });
-  }
 
-  function positionTooltip(e) {
-    const rect    = dom.indiaMap.closest('.map-container').getBoundingClientRect();
-    const tooltip = dom.mapTooltip;
-    const x       = e.clientX - rect.left + 10;
-    const y       = e.clientY - rect.top  - 10;
-    tooltip.style.left = Math.min(x, rect.width - 160) + 'px';
-    tooltip.style.top  = Math.max(y - 40, 4) + 'px';
+    dom.indiaMap.addEventListener('mouseleave', () => {
+      dom.mapTooltip.classList.remove('visible');
+    });
+
+    dom.indiaMap.addEventListener('click', (e) => {
+      const target = e.target.closest('.region-path');
+      if (target) {
+        const regionId = target.getAttribute('data-region');
+        if (regionId) selectRegion(regionId);
+      }
+    });
   }
 
   function selectRegion(regionId) {
     state.region = regionId;
 
-    // Clear all region selected classes
-    dom.indiaMap.querySelectorAll('.map-region').forEach((el) => {
-      el.classList.remove('selected-north','selected-south','selected-east',
-                          'selected-west','selected-northeast');
+    // Remove selected class from all region paths
+    dom.indiaMap.querySelectorAll('.region-path').forEach((el) => {
+      el.classList.remove('region-selected');
     });
 
-    // Apply selected class
-    const el = dom.indiaMap.querySelector(`[data-region="${regionId}"]`);
-    if (el) {
-      const cls = 'selected-' + regionId.toLowerCase().replace('northeast','northeast');
-      el.classList.add(cls);
-    }
+    // Add selected class to the matching path
+    const el = dom.indiaMap.querySelector(`.region-path[data-region="${regionId}"]`);
+    if (el) el.classList.add('region-selected');
 
     // Update display pill
     const label = REGION_LABELS[regionId] || regionId;
     const color = REGION_DOT_COLORS[regionId] || '#94A3B8';
     dom.selectedRegionText.textContent = label;
     dom.selectedRegionDot.style.background = color;
+    dom.selectedRegionDot.style.boxShadow  = `0 0 0 3px ${color}33`;
 
     // Fetch temperature for current date/region if date is set
     if (state.date) fetchTemperature();
