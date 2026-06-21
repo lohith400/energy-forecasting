@@ -69,7 +69,7 @@ cd energy-forecasting
 # Windows (CMD)
 .\venv\Scripts\activate.bat
 # macOS/Linux
-source venv/bin/activate
+source venv/Scripts/activate
 ```
 
 ### 2. Run Flask Backend Server
