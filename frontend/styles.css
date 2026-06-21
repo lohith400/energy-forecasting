@@ -1,6 +1,6 @@
 /* ============================================
    E-City — Clean Tech Design System
-   Powering India's Grid Intelligence
+   Smart Energy for India's Future
    ============================================ */
 
 /* --- CSS Custom Properties --- */
@@ -76,12 +76,12 @@ body {
   font-family: var(--font);
   color: var(--text-primary);
   background: var(--canvas);
-  background-image: url('ecity_logo.png');
+  background-image: url('mylogo.png');
   background-repeat: no-repeat;
-  background-position: center 40%;
-  background-size: 520px auto;
+  background-position: center center;
+  background-size: contain;
   background-attachment: fixed;
-  /* Very faint watermark effect */
+  /* Faint watermark effect */
   position: relative;
   line-height: 1.6;
   min-height: 100vh;
@@ -91,7 +91,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(244, 247, 246, 0.94);
+  background: rgba(244, 247, 246, 0.82);
   pointer-events: none;
   z-index: 0;
 }

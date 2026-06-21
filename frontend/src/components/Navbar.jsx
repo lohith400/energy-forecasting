@@ -61,7 +61,7 @@ export default function Navbar() {
               <span className="text-white">-</span>
               <span className="text-sky-200">City</span>
             </div>
-            <div className="text-indigo-200 text-xs font-medium">Powering India's Grid Intelligence</div>
+            <div className="text-indigo-200 text-xs font-medium">Smart Energy for India's Future</div>
           </div>
         </div>
 

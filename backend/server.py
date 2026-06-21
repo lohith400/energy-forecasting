@@ -1,7 +1,7 @@
 """
 E-City — Flask Backend
 server.py
-Powering India's Grid Intelligence
+Smart Energy for India's Future
 
 Matches the improved run_forecaster.py which uses 14 features + target:
     hour_sin, hour_cos, month_sin, month_cos,
@@ -55,6 +55,9 @@ def serve_index_html():  return send_from_directory(FRONTEND_DIR, "index.html")
 def serve_app_js():      return send_from_directory(FRONTEND_DIR, "app.js")
 @app.route("/styles.css")
 def serve_styles():      return send_from_directory(FRONTEND_DIR, "styles.css")
+@app.route("/<path:filename>")
+def serve_static(filename):
+    return send_from_directory(FRONTEND_DIR, filename)
 
 # ── Feature contract (must match run_forecaster.py exactly) ───────────────────
 LSTM_COLS = [
@@ -206,7 +209,7 @@ def load_data_and_model():
     else:
         print(f"  [Warning] Model NOT found at {MODEL_PATH}")
 
-    print("E-City Server ready — Powering India's Grid Intelligence\n")
+    print("E-City Server ready — Smart Energy for India's Future\n")
 
 
 try:
@@ -755,6 +758,6 @@ def _generate_insight(
 
 
 if __name__ == "__main__":
-    print("Starting E-City Flask Server on http://localhost:5000 — Powering India's Grid Intelligence…")
+    print("Starting E-City Flask Server on http://localhost:5000 — Smart Energy for India's Future…")
     app.run(port=5000, debug=False)
 

@@ -1,6 +1,6 @@
 /**
  * E-City — Application Logic
- * Powering India's Grid Intelligence
+ * Smart Energy for India's Future
  *
  * Features:
  *  1. SVG India Map region selection with hover & click interactions.
